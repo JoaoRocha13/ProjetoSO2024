@@ -1,12 +1,12 @@
-#include "monteCarlo.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
-#include <unistd.h> // For POSIX system calls
-#include <fcntl.h>  // For file descriptor based IO
+#include <unistd.h>
+#include <fcntl.h>
 #include <math.h>
-
+#include <sys/wait.h>
+#include <string.h>
 typedef struct {
     double x;
     double y;
@@ -107,23 +107,24 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
 int main(int argc, char* argv[]) {
 
 ////////////////////////////////////////////////////////////////////////////////////////REQA/////////////////////////////////////////////////////////////////////////
-    srand((unsigned int)time(NULL));
+    srand((unsigned int) time(NULL));
 //Verificar o Número de Argumentos
     if (argc != 4) {
         fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
     //Extrair os Argumentos: Converta os argumentos do número de processos filho e do número de pontos aleatórios de strings para inteiro
-    char*  poligono = argv[1];
+    char *poligono = argv[1];
     int num_processos_filho = atoi(argv[2]);
     int num_pontos_aleatorios = atoi(argv[3]);
+
 
     if (num_processos_filho <= 0 || num_pontos_aleatorios <= 0) {
         fprintf(stderr, "Erro: Números de processos e pontos devem ser maiores que 0.\n");
         exit(EXIT_FAILURE);
     }
     // Ler o Arquivo do Polígono
-    FILE* arquivo = fopen( poligono, "r");
+    FILE *arquivo = fopen(poligono, "r");
     if (arquivo == NULL) {
         perror("Erro ao abrir o arquivo");
         exit(EXIT_FAILURE);
@@ -132,7 +133,7 @@ int main(int argc, char* argv[]) {
     Point polygon[100]; // Use alocação dinâmica para flexibilidade
     int n = 0; // Contador de pontos no polígono
 
-    while(fscanf(arquivo, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2) { // Verifique se a leitura foi bem-sucedida
+    while (fscanf(arquivo, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2) { // Verifique se a leitura foi bem-sucedida
         n++; // Incrementa o contador de pontos
         if (n >= 100) break; // Ajuste conforme necessário
     }
@@ -144,20 +145,76 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-/////////////////////////////////////////////////////////////////////////////////////////REQAFIM////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////REQB////////////////////////////////////////////////////////////////////////
 
-    int pointsInside = 0;
-    for(int i = 0; i < num_pontos_aleatorios; i++) {
-        Point p = {(double)rand()/RAND_MAX*2, (double)rand()/RAND_MAX*2};
-        if(isInsidePolygon(polygon, n, p)) {
-            pointsInside++;
+    int fd = open("resultados.txt", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0) {
+        perror("Erro ao abrir/criar o arquivo de resultados");
+        exit(EXIT_FAILURE);
+    }
+
+    int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
+    int pontos_extra = num_pontos_aleatorios % num_processos_filho; // Pontos extras caso a divisão não seja exata
+
+    for (int i = 0; i < num_processos_filho; i++) {
+        pid_t pid = fork();
+        if (pid == 0) { // Código do processo filho
+            int pontos_a_processar = pontos_por_filho + (i == num_processos_filho - 1 ? pontos_extra
+                                                                                      : 0); // Último filho pega os pontos extras
+            int pontos_dentro = 0;
+            for (int j = 0; j < pontos_a_processar; j++) {
+                Point p = {(double) rand() / RAND_MAX * 2, (double) rand() / RAND_MAX * 2};
+                if (isInsidePolygon(polygon, n, p)) {
+                    pontos_dentro++;
+                }
+            }
+
+            // Escreve os resultados no arquivo de resultados
+            dprintf(fd, "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
+            close(fd);
+            exit(0); // Termina o processo filho
+        } else if (pid < 0) {
+            perror("Erro no fork");
+            exit(EXIT_FAILURE);
         }
     }
 
-    double squareArea = 4.0;
-    double lakeArea = squareArea * ((double)pointsInside / num_pontos_aleatorios);
+    // Aguarda todos os processos filho terminarem
+    while (wait(NULL) > 0);
 
-    printf("Estimated area of the polygon: %f\n", lakeArea);
+    close(fd);
+
+    fd = open("resultados.txt", O_RDONLY);
+    if (fd < 0) {
+        perror("Erro ao abrir o arquivo de resultados para leitura");
+        exit(EXIT_FAILURE);
+    }
+
+    char buffer[1024];
+    int totalPontosDentro = 0, totalPontosProcessados = 0;
+    ssize_t bytesLidos;
+
+// Lê os resultados do arquivo e os agrega
+    while ((bytesLidos = read(fd, buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytesLidos] = '\0'; // Garante que o buffer seja uma string válida
+        char *linha = strtok(buffer, "\n");
+        while (linha != NULL) {
+            int pidFilho, pontosProcessados, pontosDentro;
+            sscanf(linha, "%d;%d;%d", &pidFilho, &pontosProcessados, &pontosDentro);
+            totalPontosDentro += pontosDentro;
+            totalPontosProcessados += pontosProcessados;
+            linha = strtok(NULL, "\n");
+        }
+    }
+    close(fd);
+
+// Agora, calcula e exibe a área estimada com base nos resultados agregados
+    if (totalPontosProcessados > 0) { // Evita divisão por zero
+        double areaEstimada = 4.0 * (double) totalPontosDentro / totalPontosProcessados;
+        printf("Área estimada do polígono: %f\n", areaEstimada);
+    } else {
+        printf("Nenhum ponto processado.\n");
+    }
 
     return 0;
 }
