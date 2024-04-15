@@ -103,6 +103,39 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
 
     return count&1;
 }
+ssize_t readn2(int fd, void *buffer, size_t n) {
+    size_t left = n;
+    ssize_t read_bytes;
+    char *ptr = (char*) buffer;
+
+    while (left > 0) {
+        if ((read_bytes = read(fd, ptr, left)) < 0) {
+            if (left == n) return -1;  // Error, return -1
+            else break;  // Error after some bytes read
+        } else if (read_bytes == 0) {
+            break;  // EOF
+        }
+        left -= read_bytes;
+        ptr += read_bytes;
+    }
+    return (n - left);  // Return >= 0
+}
+
+ssize_t writen2(int fd, const void *buffer, size_t n) {
+    size_t left = n;
+    ssize_t written_bytes;
+    const char *ptr = (const char*) buffer;
+
+    while (left > 0) {
+        if ((written_bytes = write(fd, ptr, left)) <= 0) {
+            if (left == n) return -1;  // Error, return -1
+            else break;  // Error after some bytes written
+        }
+        left -= written_bytes;
+        ptr += written_bytes;
+    }
+    return (n - left);  // Return >= 0
+}
 
 int main(int argc, char* argv[]) {
 
