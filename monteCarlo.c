@@ -154,6 +154,98 @@ int main(int argc, char* argv[]) {
     int num_pontos_aleatorios = atoi(argv[3]);
     char *modo = argv[4];  // 'normal' ou 'verboso'
 
+    FILE *arquivo = fopen(poligono, "r");
+    if (arquivo == NULL) {
+        perror("Erro ao abrir o arquivo");
+        exit(EXIT_FAILURE);
+    }
+
+    Point polygon[100];
+    int n = 0;
+    while (fscanf(arquivo, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2 && n < 100) {
+        n++;
+    }
+    fclose(arquivo);
+
+    if (n < 3) {
+        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    int fd[num_processos_filho][2];
+    FILE *file = fopen("resultados.txt", "w");
+    if (file == NULL) {
+        perror("Falha ao abrir arquivo para escrita");
+        exit(EXIT_FAILURE);
+    }
+
+
+    for (int i = 0; i < num_processos_filho; i++) {
+        if (pipe(fd[i]) == -1) {
+            perror("Erro ao criar pipe");
+            exit(EXIT_FAILURE);
+        }
+
+        pid_t pid = fork();
+        if (pid == 0) {  // Processo filho
+            srand((unsigned int)time(NULL) + getpid());
+            int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
+            int pontos_extra = num_pontos_aleatorios % num_processos_filho;
+            int pontos_a_processar = pontos_por_filho + (i == num_processos_filho - 1 ? pontos_extra : 0);
+            int pontos_dentro = 0;
+
+            for (int j = 0; j < pontos_a_processar; j++) {
+                Point p = {(double)rand() / RAND_MAX * 2, (double)rand() / RAND_MAX * 2};
+                if (isInsidePolygon(polygon, n, p)) {
+                    pontos_dentro++;
+                }
+            }
+
+            fprintf(file, "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
+            fclose(file); // Close the file in each child to flush the output
+
+            if (strcmp(modo, "normal") == 0) {
+                char output[128] = {0}; // Inicializa o buffer com zeros
+                sprintf(output, "PID %d encontrou %d pontos dentro.\n", getpid(), pontos_dentro);
+                writen2(fd[i][1], output, strlen(output) + 1); // Inclui o caractere nulo na escrita
+            } else if (strcmp(modo, "verboso") == 0) {
+                // Verbose mode is similar but could include more detailed output
+                char output[128];
+                sprintf(output, "PID %d processou %d pontos, %d dentro.\n", getpid(), pontos_a_processar, pontos_dentro);
+                writen2(fd[i][1], output, strlen(output));
+            }
+            exit(0);
+        }
+        close(fd[i][1]);  // Fecha o lado de escrita no pai
+    }
+
+    // Reading from pipes
+    for (int i = 0; i < num_processos_filho; i++) {
+        char buffer[1024] = {0}; // Limpa o buffer
+        while (readn2(fd[i][0], buffer, sizeof(buffer) - 1) > 0) {
+            printf("%s", buffer);
+            memset(buffer, 0, sizeof(buffer)); // Limpa o buffer após o uso
+        }
+        close(fd[i][0]);
+    }
+
+    while (wait(NULL) > 0);  // Aguarda todos os processos filho terminarem
+
+    return 0;
+}
+    /*srand((unsigned int)time(NULL) + getpid());  // Assegura semente aleatória única por processo
+
+    if (argc != 5) {
+        fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios> <modo>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    char *poligono = argv[1];
+    int num_processos_filho = atoi(argv[2]);
+    int num_pontos_aleatorios = atoi(argv[3]);
+
+    char *modo = argv[4];  // 'normal' ou 'verboso'
+
     if (num_processos_filho <= 0 || num_pontos_aleatorios <= 0) {
         fprintf(stderr, "Erro: Números de processos e pontos devem ser maiores que 0.\n");
         exit(EXIT_FAILURE);
@@ -184,12 +276,17 @@ int main(int argc, char* argv[]) {
             exit(EXIT_FAILURE);
         }
     }
-
+////////////////////////////////////////////////////////////////////////REQC/////////////////////////////////////////
     for (int i = 0; i < num_processos_filho; i++) {
         pid_t pid = fork();
         if (pid == 0) {  // Processo filho
             srand((unsigned int)time(NULL) + getpid());  // Reinicia a semente aleatória
             close(fd[i][0]);  // Fecha lado de leitura
+            FILE *file = fopen("resultados.txt", "a");  // Abre o arquivo em modo de anexação
+            if (file == NULL) {
+                perror("Falha ao abrir arquivo para escrita");
+                exit(EXIT_FAILURE);
+            }
             int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
             int pontos_extra = num_pontos_aleatorios % num_processos_filho;
             int pontos_a_processar = pontos_por_filho + (i == num_processos_filho - 1 ? pontos_extra : 0);
@@ -202,6 +299,7 @@ int main(int argc, char* argv[]) {
                         pontos_dentro++;
                     }
                 }
+
                 char output[128];
                 sprintf(output, "%d;%d\n", getpid(), pontos_dentro);
                 writen2(fd[i][1], output, strlen(output));
@@ -259,4 +357,4 @@ int main(int argc, char* argv[]) {
     while (wait(NULL) > 0);  // Aguarda todos os processos filho terminarem
 
     return 0;
-}
+}*/
