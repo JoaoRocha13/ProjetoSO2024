@@ -5,16 +5,19 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <math.h>
-#include <sys/wait.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 
 typedef struct {
     double x;
     double y;
 } Point;
+
+#define SOCKET_PATH "/tmp/polygon_socket"
 
 //#define NUM_POINTS 10000
 
@@ -146,64 +149,94 @@ ssize_t readn2(int fd, void *buffer, size_t n) {
 }
 
 int main(int argc, char* argv[]) {
-    srand((unsigned int)time(NULL) + getpid());
+        srand((unsigned int)time(NULL) + getpid());
 
-    if (argc != 5) {
-        fprintf(stderr, "Usage: %s <polygon_file> <num_children> <num_random_points> <mode>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    char *poligono = argv[1];
-    int num_processos_filho = atoi(argv[2]);
-    int num_pontos_aleatorios = atoi(argv[3]);
-    char *modo = argv[4];
-
-    int polygonFile = open(poligono, O_RDONLY);
-    if (polygonFile < 0) {
-        perror("Erro ao abrir arquivo de polígono");
-        exit(EXIT_FAILURE);
-    }
-
-    Point polygon[100];
-    int n = 0;
-    double x, y;
-    char line[256];
-    while (read(polygonFile, line, sizeof(line)) > 0 && n < 100) {
-        if (sscanf(line, "%lf %lf", &x, &y) == 2) {
-            polygon[n].x = x;
-            polygon[n].y = y;
-            n++;
+        if (argc != 5) {
+            char usage[256];
+            int len = snprintf(usage, sizeof(usage), "Usage: %s <polygon_file> <num_children> <num_random_points> <mode>\n", argv[0]);
+            write(STDERR_FILENO, usage, len);
+            return EXIT_FAILURE;
         }
-    }
-    close(polygonFile);
 
-    if (n < 3) {
-        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
-        exit(EXIT_FAILURE);
-    }
+        char *poligono = argv[1];
+        int num_processos_filho = atoi(argv[2]);
+        int num_pontos_aleatorios = atoi(argv[3]);
+        char *modo = argv[4];
 
-    int resultFile = open("resultados.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (resultFile < 0) {
-        perror("Erro ao abrir arquivo de resultados");
-        exit(EXIT_FAILURE);
-    }
-    close(resultFile); // Fecha imediatamente após abrir para limpar conteúdo
-
-    int fd[num_processos_filho][2];
-    int total_pontos_dentro = 0;
-    int total_points_processed = 0;
-
-    for (int i = 0; i < num_processos_filho; i++) {
-        if (pipe(fd[i]) == -1) {
-            perror("Erro ao criar o pipe");
+        int polygonFile = open(poligono, O_RDONLY);
+        if (polygonFile < 0) {
+            perror("Erro ao abrir arquivo de polígono");
             exit(EXIT_FAILURE);
         }
 
+        Point polygon[100];
+        int n = 0;
+        double x, y;
+        char line[256];
+        while (read(polygonFile, line, sizeof(line)) > 0 && n < 100) {
+            if (sscanf(line, "%lf %lf", &x, &y) == 2) {
+                polygon[n].x = x;
+                polygon[n].y = y;
+                n++;
+            }
+        }
+        close(polygonFile);
+
+        if (n < 3) {
+            char error_msg[64];
+            snprintf(error_msg, sizeof(error_msg), "Polígono inválido ou dados insuficientes no arquivo.\n");
+            write(STDERR_FILENO, error_msg, strlen(error_msg));
+            exit(EXIT_FAILURE);
+        }
+
+        int resultFile = open("resultados.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (resultFile < 0) {
+            perror("Erro ao abrir arquivo de resultados");
+            exit(EXIT_FAILURE);
+        }
+        close(resultFile);
+    // Criando socket de domínio Unix
+    int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Erro ao criar o socket de domínio Unix");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
+
+    if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        perror("Erro ao fazer o bind do socket de domínio Unix");
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(sockfd, num_processos_filho) == -1) {
+        perror("Erro ao escutar conexões no socket de domínio Unix");
+        exit(EXIT_FAILURE);
+    }
+
+    int total_pontos_dentro = 0;
+    int total_points_processed = 0;
+
+    // Lançando processos filho
+    for (int i = 0; i < num_processos_filho; i++) {
         pid_t pid = fork();
         if (pid == 0) {  // Child process
-            srand((unsigned int)time(NULL) + getpid());
-            close(fd[i][0]);  // Close read end
-            resultFile = open("resultados.txt", O_WRONLY | O_APPEND);  // Reabre para adicionar resultados
+            // Configura uma nova semente para o gerador de números aleatórios
+            srand((unsigned int)time(NULL) + getpid()); // Child process
+            close(sockfd);  // Fechar o socket no processo filho
+            int client_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+            if (client_fd < 0) {
+                perror("Erro ao criar socket de domínio Unix no cliente");
+                exit(EXIT_FAILURE);
+            }
+
+            if (connect(client_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+                perror("Erro ao conectar ao socket de domínio Unix no cliente");
+                exit(EXIT_FAILURE);
+            }
 
             int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
             int pontos_extra = num_pontos_aleatorios % num_processos_filho;
@@ -217,55 +250,69 @@ int main(int argc, char* argv[]) {
                     if (strcmp(modo, "verboso") == 0) {
                         char verbose_output[128];
                         sprintf(verbose_output, "%.2f;%.2f\n", p.x, p.y);
-                        writen2(fd[i][1], verbose_output, strlen(verbose_output));
+                        writen2(client_fd, verbose_output, strlen(verbose_output));
                     }
                 }
             }
             char result[128];
             sprintf(result, "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
-            write(resultFile, result, strlen(result)); // Escreve diretamente no arquivo de resultados
-            close(resultFile);
+            writen2(client_fd, result, strlen(result)); // Escreve diretamente no socket
 
-            char output[128];
-            sprintf(output, "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
-            writen2(fd[i][1], output, strlen(output));
-            close(fd[i][1]);
-            exit(0);
+            close(client_fd);
+            exit(EXIT_SUCCESS);
         }
-        close(fd[i][1]);  // Close write end in parent
     }
 
-    // Parent process: Monitor progress and collect data
-    int old_percent = -1;
-    while (total_points_processed < num_pontos_aleatorios) {
-        for (int i = 0; i < num_processos_filho; i++) {
-            char buffer[1024];
-            ssize_t bytes_read = readn2(fd[i][0], buffer, sizeof(buffer) - 1);
-            if (bytes_read > 0) {
-                buffer[bytes_read] = '\0';  // Adiciona terminador de string
-                int pid, processed, inside;
-                if (sscanf(buffer, "%d;%d;%d", &pid, &processed, &inside) == 3) {
-                    total_points_processed += processed;
-                    total_pontos_dentro += inside;
-                    if (strcmp(modo, "normal") == 0 && (strstr(buffer, ";") == NULL)) {
-                        printf("Progresso: %s", buffer);  // Se não contiver, imprime o progresso
-                    }
-                }
-                printf("%s", buffer); // Imprime os pontos gerados
-                int percent = (int)((double)total_points_processed / num_pontos_aleatorios * 100.0);
-                if (strcmp(modo, "normal") == 0 && percent != old_percent) {
-                    printf("Progresso: %d%%\n", percent);
-                    old_percent = percent;
+    // Aceitar conexões dos filhos e processar resultados
+    while (num_processos_filho > 0) {
+        struct sockaddr_un client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        int client_fd = accept(sockfd, (struct sockaddr*)&client_addr, &client_len);
+        if (client_fd < 0) {
+            perror("Erro ao aceitar conexão de cliente");
+            exit(EXIT_FAILURE);
+        }
+
+        char buffer[1024];
+        ssize_t bytes_read = readn2(client_fd, buffer, sizeof(buffer) - 1);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';  // Adiciona terminador de string
+            int pid, processed, inside;
+            if (sscanf(buffer, "%d;%d;%d", &pid, &processed, &inside) == 3) {
+                total_points_processed += processed;
+                total_pontos_dentro += inside;
+                if (strcmp(modo, "normal") == 0 && (strstr(buffer, ";") == NULL)) {
+                    printf("Progresso: %s", buffer);  // Se não contiver, imprime o progresso
                 }
             }
+            if (strcmp(modo, "normal") == 0 || strcmp(modo, "verboso") == 0) {
+                printf("%s", buffer); // Imprime os pontos gerados
+            }
+            int percent = (int)((double)total_points_processed / num_pontos_aleatorios * 100.0);
+            if (strcmp(modo, "normal") == 0) {
+                printf("Progresso: %d%%\n", percent);
+            }
+
+            // Escrever os resultados no arquivo resultados.txt
+            int resultFile = open("resultados.txt", O_WRONLY | O_APPEND);
+            if (resultFile < 0) {
+                perror("Erro ao abrir arquivo de resultados");
+                exit(EXIT_FAILURE);
+            }
+            writen2(resultFile, buffer, strlen(buffer));
+            close(resultFile);
         }
+        close(client_fd);
+        num_processos_filho--;
     }
 
-    while (wait(NULL) > 0);  // Wait for all child processes to finish
+    close(sockfd);  // Fechar o socket no processo pai
 
-    double area_of_reference = 4.0; // Area of the bounding square
-    double estimated_area = ((double)total_pontos_dentro / num_pontos_aleatorios) * area_of_reference;
-    printf("Área estimada do polígono: %.2f unidades quadradas\n", estimated_area);
+    if (strcmp(modo, "verboso") != 0) {
+        double area_of_reference = 4.0; // Área do quadrado envolvente
+        double estimated_area = ((double)total_pontos_dentro / num_pontos_aleatorios) * area_of_reference;
+        printf("Área estimada do polígono: %.2f unidades quadradas\n", estimated_area);
+    }
 
     return 0;
 }
