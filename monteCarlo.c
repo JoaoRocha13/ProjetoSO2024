@@ -8,6 +8,9 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/types.h>
+
+
 typedef struct {
     double x;
     double y;
@@ -119,7 +122,7 @@ ssize_t writen2(int fd, const void *buffer, size_t n) {
         left -= written_bytes;
         ptr += written_bytes;
     }
-    return (n - left);  // Deve retornar 0 se tudo foi escrito
+    return (n - left);
 }
 
 ssize_t readn2(int fd, void *buffer, size_t n) {
@@ -157,7 +160,7 @@ int main(int argc, char* argv[]) {
 
     int polygonFile = open(poligono, O_RDONLY);
     if (polygonFile < 0) {
-        perror("Error opening polygon file");
+        perror("Erro ao abrir arquivo de polígono");
         exit(EXIT_FAILURE);
     }
 
@@ -175,31 +178,31 @@ int main(int argc, char* argv[]) {
     close(polygonFile);
 
     if (n < 3) {
-        fprintf(stderr, "Invalid polygon or insufficient data in file.\n");
+        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
         exit(EXIT_FAILURE);
     }
+
     int resultFile = open("resultados.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (resultFile < 0) {
-        perror("Falha ao abrir arquivo para escrita");
+        perror("Erro ao abrir arquivo de resultados");
         exit(EXIT_FAILURE);
     }
     close(resultFile); // Fecha imediatamente após abrir para limpar conteúdo
 
     int fd[num_processos_filho][2];
-    pid_t pids[num_processos_filho];
     int total_pontos_dentro = 0;
+    int total_points_processed = 0;
 
     for (int i = 0; i < num_processos_filho; i++) {
         if (pipe(fd[i]) == -1) {
-            perror("Error creating pipe");
+            perror("Erro ao criar o pipe");
             exit(EXIT_FAILURE);
         }
 
         pid_t pid = fork();
-        pids[i] = pid;
-        if (pid == 0) {  // Processo filho
+        if (pid == 0) {  // Child process
             srand((unsigned int)time(NULL) + getpid());
-            close(fd[i][0]);  // Fecha o lado de leitura
+            close(fd[i][0]);  // Close read end
             resultFile = open("resultados.txt", O_WRONLY | O_APPEND);  // Reabre para adicionar resultados
 
             int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
@@ -211,6 +214,11 @@ int main(int argc, char* argv[]) {
                 Point p = {(double)rand() / RAND_MAX * 2, (double)rand() / RAND_MAX * 2};
                 if (isInsidePolygon(polygon, n, p)) {
                     pontos_dentro++;
+                    if (strcmp(modo, "verboso") == 0) {
+                        char verbose_output[128];
+                        sprintf(verbose_output, "%.2f;%.2f\n", p.x, p.y);
+                        writen2(fd[i][1], verbose_output, strlen(verbose_output));
+                    }
                 }
             }
             char result[128];
@@ -219,163 +227,45 @@ int main(int argc, char* argv[]) {
             close(resultFile);
 
             char output[128];
-            if (strcmp(modo, "normal") == 0) {
-                sprintf(output, "PID %d encontrou %d pontos dentro.\n", getpid(), pontos_dentro);
-            } else {
-                sprintf(output, "PID %d processou %d pontos, %d dentro.\n", getpid(), pontos_a_processar, pontos_dentro);
-            }
-            writen2(fd[i][1], output, strlen(output) + 1);
+            sprintf(output, "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
+            writen2(fd[i][1], output, strlen(output));
             close(fd[i][1]);
             exit(0);
         }
-        close(fd[i][1]);  // Fecha o lado de escrita no pai
+        close(fd[i][1]);  // Close write end in parent
     }
 
-    for (int i = 0; i < num_processos_filho; i++) {
-        char buffer[1024];
-        while (readn2(fd[i][0], buffer, sizeof(buffer) - 1) > 0) {
-            printf("%s", buffer);
-            int pid, processed, inside;
-            if (sscanf(buffer, "PID %d processou %d pontos, %d dentro.", &pid, &processed, &inside) == 3 ||
-                sscanf(buffer, "PID %d encontrou %d pontos dentro.", &pid, &inside) == 2) {
-                total_pontos_dentro += inside;
+    // Parent process: Monitor progress and collect data
+    int old_percent = -1;
+    while (total_points_processed < num_pontos_aleatorios) {
+        for (int i = 0; i < num_processos_filho; i++) {
+            char buffer[1024];
+            ssize_t bytes_read = readn2(fd[i][0], buffer, sizeof(buffer) - 1);
+            if (bytes_read > 0) {
+                buffer[bytes_read] = '\0';  // Adiciona terminador de string
+                int pid, processed, inside;
+                if (sscanf(buffer, "%d;%d;%d", &pid, &processed, &inside) == 3) {
+                    total_points_processed += processed;
+                    total_pontos_dentro += inside;
+                    if (strcmp(modo, "normal") == 0 && (strstr(buffer, ";") == NULL)) {
+                        printf("Progresso: %s", buffer);  // Se não contiver, imprime o progresso
+                    }
+                }
+                printf("%s", buffer); // Imprime os pontos gerados
+                int percent = (int)((double)total_points_processed / num_pontos_aleatorios * 100.0);
+                if (strcmp(modo, "normal") == 0 && percent != old_percent) {
+                    printf("Progresso: %d%%\n", percent);
+                    old_percent = percent;
+                }
             }
         }
-        close(fd[i][0]);
     }
 
-    while (wait(NULL) > 0);  // Espera todos os processos filho terminarem
+    while (wait(NULL) > 0);  // Wait for all child processes to finish
 
-    if (total_pontos_dentro > 0) {
-        double area_of_reference = 4.0; // Área do quadrado de lado 2 (-1 a 1 ou 0 a 2)
-        double estimated_area = ((double)total_pontos_dentro / num_pontos_aleatorios) * area_of_reference;
-        printf("Área estimada do polígono: %.2f unidades quadradas\n", estimated_area);
-    }
+    double area_of_reference = 4.0; // Area of the bounding square
+    double estimated_area = ((double)total_pontos_dentro / num_pontos_aleatorios) * area_of_reference;
+    printf("Área estimada do polígono: %.2f unidades quadradas\n", estimated_area);
 
     return 0;
 }
-    /*srand((unsigned int)time(NULL) + getpid());  // Assegura semente aleatória única por processo
-
-    if (argc != 5) {
-        fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios> <modo>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    char *poligono = argv[1];
-    int num_processos_filho = atoi(argv[2]);
-    int num_pontos_aleatorios = atoi(argv[3]);
-
-    char *modo = argv[4];  // 'normal' ou 'verboso'
-
-    if (num_processos_filho <= 0 || num_pontos_aleatorios <= 0) {
-        fprintf(stderr, "Erro: Números de processos e pontos devem ser maiores que 0.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    FILE *arquivo = fopen(poligono, "r");
-    if (arquivo == NULL) {
-        perror("Erro ao abrir o arquivo");
-        exit(EXIT_FAILURE);
-    }
-
-    Point polygon[100];
-    int n = 0;
-    while (fscanf(arquivo, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2 && n < 100) {
-        n++;
-    }
-    fclose(arquivo);
-
-    if (n < 3) {
-        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    int fd[num_processos_filho][2];
-    for (int i = 0; i < num_processos_filho; i++) {
-        if (pipe(fd[i]) == -1) {
-            perror("Erro ao criar pipe");
-            exit(EXIT_FAILURE);
-        }
-    }
-////////////////////////////////////////////////////////////////////////REQC/////////////////////////////////////////
-    for (int i = 0; i < num_processos_filho; i++) {
-        pid_t pid = fork();
-        if (pid == 0) {  // Processo filho
-            srand((unsigned int)time(NULL) + getpid());  // Reinicia a semente aleatória
-            close(fd[i][0]);  // Fecha lado de leitura
-            FILE *file = fopen("resultados.txt", "a");  // Abre o arquivo em modo de anexação
-            if (file == NULL) {
-                perror("Falha ao abrir arquivo para escrita");
-                exit(EXIT_FAILURE);
-            }
-            int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
-            int pontos_extra = num_pontos_aleatorios % num_processos_filho;
-            int pontos_a_processar = pontos_por_filho + (i == num_processos_filho - 1 ? pontos_extra : 0);
-
-            if (strcmp(modo, "normal") == 0) {
-                int pontos_dentro = 0;
-                for (int j = 0; j < pontos_a_processar; j++) {
-                    Point p = {(double)rand() / RAND_MAX * 2, (double)rand() / RAND_MAX * 2};
-                    if (isInsidePolygon(polygon, n, p)) {
-                        pontos_dentro++;
-                    }
-                }
-
-                char output[128];
-                sprintf(output, "%d;%d\n", getpid(), pontos_dentro);
-                writen2(fd[i][1], output, strlen(output));
-            } else {  // Modo verboso
-                for (int j = 0; j < pontos_a_processar; j++) {
-                    Point p = {(double)rand() / RAND_MAX * 2, (double)rand() / RAND_MAX * 2};
-                    if (isInsidePolygon(polygon, n, p)) {
-                        char output[128];
-                        sprintf(output, "%d;%.2f;%.2f\n", getpid(), p.x, p.y);
-                        writen2(fd[i][1], output, strlen(output));
-                    }
-                }
-            }
-            close(fd[i][1]);
-            exit(0);
-        } else if (pid < 0) {
-            perror("Falha ao criar processo filho");
-            exit(EXIT_FAILURE);
-        }
-        close(fd[i][1]);  // Fecha o lado de escrita no pai
-    }
-    int total_pontos_dentro = 0;
-    for (int i = 0; i < num_processos_filho; i++) {
-        char buffer[1024];
-        while (readn2(fd[i][0], buffer, sizeof(buffer) - 1) > 0) {
-            buffer[strlen(buffer)] = '\0';
-            if (strcmp(modo, "normal") == 0) {
-                int pid, pontos_dentro;
-                sscanf(buffer, "%d;%d", &pid, &pontos_dentro);
-                printf("PID %d encontrou %d pontos dentro.\n", pid, pontos_dentro);
-                total_pontos_dentro += pontos_dentro; // Soma os pontos dentro
-            } else {
-                int pid;
-                double x, y;
-                sscanf(buffer, "%d;%lf;%lf", &pid, &x, &y);
-                printf("PID %d ponto dentro: X=%.2f, Y=%.2f\n", pid, x, y);
-            }
-        }
-        close(fd[i][0]);
-    }
-
-// Fechar os pipes
-    for (int i = 0; i < num_processos_filho; i++) {
-        close(fd[i][0]);
-    }
-
-// Calcular e exibir a área estimada
-    if (strcmp(modo, "normal") == 0 && total_pontos_dentro > 0) {
-        double area_estimada = (double)total_pontos_dentro / num_pontos_aleatorios * 4.0;  // Supõe uma área de referência de 4 unidades quadradas
-        printf("Área estimada do polígono: %.2f unidades quadradas\n", area_estimada);
-    }
-
-
-
-    while (wait(NULL) > 0);  // Aguarda todos os processos filho terminarem
-
-    return 0;
-}*/
