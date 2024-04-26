@@ -1,23 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <time.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <math.h>
-#include <string.h>
-#include <errno.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-
-
-typedef struct {
-    double x;
-    double y;
-} Point;
-
-#define SOCKET_PATH "/tmp/polygon_socket"
+#include "monteCarlo.h"
 
 //#define NUM_POINTS 10000
 
@@ -165,7 +146,7 @@ int main(int argc, char* argv[]) {
 
         int polygonFile = open(poligono, O_RDONLY);
         if (polygonFile < 0) {
-            perror("Erro ao abrir arquivo de polígono");
+            perror("Erro ao abrir arquivo de poligono");
             exit(EXIT_FAILURE);
         }
 
@@ -184,7 +165,7 @@ int main(int argc, char* argv[]) {
 
         if (n < 3) {
             char error_msg[64];
-            snprintf(error_msg, sizeof(error_msg), "Polígono inválido ou dados insuficientes no arquivo.\n");
+            snprintf(error_msg, sizeof(error_msg), "Poligono invalido ou dados insuficientes no arquivo.\n");
             write(STDERR_FILENO, error_msg, strlen(error_msg));
             exit(EXIT_FAILURE);
         }
@@ -198,7 +179,7 @@ int main(int argc, char* argv[]) {
     // Criando socket de domínio Unix
     int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sockfd < 0) {
-        perror("Erro ao criar o socket de domínio Unix");
+        perror("Erro ao criar o socket de dominio Unix");
         exit(EXIT_FAILURE);
     }
 
@@ -208,12 +189,12 @@ int main(int argc, char* argv[]) {
     strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
 
     if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-        perror("Erro ao fazer o bind do socket de domínio Unix");
+        perror("Erro ao fazer o bind do socket de dominio Unix");
         exit(EXIT_FAILURE);
     }
 
     if (listen(sockfd, num_processos_filho) == -1) {
-        perror("Erro ao escutar conexões no socket de domínio Unix");
+        perror("Erro ao ouvir conexoes no socket de dominio Unix");
         exit(EXIT_FAILURE);
     }
 
@@ -229,12 +210,12 @@ int main(int argc, char* argv[]) {
             close(sockfd);  // Fechar o socket no processo filho
             int client_fd = socket(AF_UNIX, SOCK_STREAM, 0);
             if (client_fd < 0) {
-                perror("Erro ao criar socket de domínio Unix no cliente");
+                perror("Erro ao criar socket de dominio Unix");
                 exit(EXIT_FAILURE);
             }
 
             if (connect(client_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-                perror("Erro ao conectar ao socket de domínio Unix no cliente");
+                perror("Erro ao conectar ao socket de dominio Unix");
                 exit(EXIT_FAILURE);
             }
 
@@ -269,7 +250,7 @@ int main(int argc, char* argv[]) {
         socklen_t client_len = sizeof(client_addr);
         int client_fd = accept(sockfd, (struct sockaddr*)&client_addr, &client_len);
         if (client_fd < 0) {
-            perror("Erro ao aceitar conexão de cliente");
+            perror("Erro ao aceitar conexao");
             exit(EXIT_FAILURE);
         }
 
@@ -311,7 +292,7 @@ int main(int argc, char* argv[]) {
     if (strcmp(modo, "verboso") != 0) {
         double area_of_reference = 4.0; // Área do quadrado envolvente
         double estimated_area = ((double)total_pontos_dentro / num_pontos_aleatorios) * area_of_reference;
-        printf("Área estimada do polígono: %.2f unidades quadradas\n", estimated_area);
+        printf("Area estimada do poligono: %.2f unidades quadradas\n", estimated_area);
     }
 
     return 0;
