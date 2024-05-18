@@ -7,10 +7,8 @@
 #include <math.h>
 #include <pthread.h>
 #include <string.h>
-#include <errno.h>
 
 #define MAX_POINTS 1000000
-#define BUFFER_SIZE 1024
 
 typedef struct {
     double x;
@@ -18,13 +16,20 @@ typedef struct {
 } Point;
 
 typedef struct {
+    Point *points;
     Point *polygon;
-    int polygon_size;
-    int total_points;
-    int points_inside;
-    int points_checked;
-    pthread_mutex_t mutex;
-} SharedData;
+    int start;
+    int end;
+    int num_polygon_points;
+    int *total_inside;
+    pthread_mutex_t *mutex;
+} ThreadData;
+
+typedef struct {
+    int *total_processed;
+    int num_random_points;
+    pthread_mutex_t *mutex;
+} ProgressData;
 
 /**
  * @brief Determines the orientation of an ordered triplet (p, q, r).
@@ -108,43 +113,34 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
 }
 
 void *worker_thread(void *arg) {
-    SharedData *data = (SharedData *)arg;
-    int points_per_thread = data->total_points;
+    ThreadData *data = (ThreadData *)arg;
+    int local_inside = 0;
 
-    for (int i = 0; i < points_per_thread; i++) {
-        Point p = {(double)rand() / RAND_MAX * 2, (double)rand() / RAND_MAX * 2};
-
-        pthread_mutex_lock(&data->mutex);
-        data->points_checked++;
-        if (isInsidePolygon(data->polygon, data->polygon_size, p)) {
-            data->points_inside++;
+    for (int i = data->start; i < data->end; i++) {
+        if (isInsidePolygon(data->polygon, data->num_polygon_points, data->points[i])) {
+            local_inside++;
         }
-        pthread_mutex_unlock(&data->mutex);
     }
 
-    return NULL;
+    pthread_mutex_lock(data->mutex);
+    *(data->total_inside) += local_inside;
+    pthread_mutex_unlock(data->mutex);
+
+    pthread_exit(NULL);
 }
 
-void *progress_bar(void *arg) {
-    SharedData *data = (SharedData *)arg;
-
-    while (true) {
+void *progress_thread(void *arg) {
+    ProgressData *progress_data = (ProgressData *)arg;
+    while (1) {
         sleep(1);
-
-        pthread_mutex_lock(&data->mutex);
-        int checked = data->points_checked;
-        pthread_mutex_unlock(&data->mutex);
-
-        int progress = (checked * 100) / data->total_points;
+        pthread_mutex_lock(progress_data->mutex);
+        int progress = (*(progress_data->total_processed) * 100) / progress_data->num_random_points;
+        pthread_mutex_unlock(progress_data->mutex);
         printf("\rProgresso: %d%%", progress);
         fflush(stdout);
-
-        if (checked >= data->total_points) {
-            break;
-        }
+        if (progress >= 100) break;
     }
-
-    return NULL;
+    pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[]) {
@@ -158,7 +154,7 @@ int main(int argc, char *argv[]) {
     int num_pontos_aleatorios = atoi(argv[3]);
 
     if (num_threads <= 0 || num_pontos_aleatorios <= 0) {
-        fprintf(stderr, "Erro: Números de threads e pontos devem ser maiores que 0.\n");
+        fprintf(stderr, "Erro: Número de threads e pontos deve ser maior que 0.\n");
         return EXIT_FAILURE;
     }
 
@@ -188,9 +184,13 @@ int main(int argc, char *argv[]) {
             if (sscanf(line, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2) {
                 n++;
                 if (n >= capacity) {
-                    fprintf(stderr, "Erro: Número máximo de pontos do polígono excedido.\n");
-                    close(arquivo);
-                    return EXIT_FAILURE;
+                    capacity *= 2;
+                    polygon = realloc(polygon, capacity * sizeof(Point));
+                    if (polygon == NULL) {
+                        perror("Erro ao realocar memória para o polígono");
+                        close(arquivo);
+                        return EXIT_FAILURE;
+                    }
                 }
             }
             line = strtok_r(NULL, "\n", &saveptr);
@@ -205,35 +205,68 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    SharedData data;
-    data.polygon = polygon;
-    data.polygon_size = n;
-    data.total_points = num_pontos_aleatorios;
-    data.points_inside = 0;
-    data.points_checked = 0;
-    pthread_mutex_init(&data.mutex, NULL);
-
-    pthread_t worker_threads[num_threads];
-    pthread_t progress_thread;
+    Point *pontos = malloc(num_pontos_aleatorios * sizeof(Point));
+    if (pontos == NULL) {
+        perror("Erro ao alocar memória para pontos");
+        free(polygon);
+        return EXIT_FAILURE;
+    }
 
     srand((unsigned int)time(NULL));
+    for (int i = 0; i < num_pontos_aleatorios; i++) {
+        pontos[i].x = (double)rand() / RAND_MAX * 2;
+        pontos[i].y = (double)rand() / RAND_MAX * 2;
+    }
+
+    pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
+    ThreadData *thread_data = malloc(num_threads * sizeof(ThreadData));
+    int total_inside = 0;
+    int total_processed = 0;
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+    int points_per_thread = num_pontos_aleatorios / num_threads;
+    int remaining_points = num_pontos_aleatorios % num_threads;
 
     for (int i = 0; i < num_threads; i++) {
-        pthread_create(&worker_threads[i], NULL, worker_thread, &data);
+        thread_data[i].points = pontos;
+        thread_data[i].polygon = polygon;
+        thread_data[i].start = i * points_per_thread;
+        thread_data[i].end = thread_data[i].start + points_per_thread;
+        if (i == num_threads - 1) {
+            thread_data[i].end += remaining_points;
+        }
+        thread_data[i].num_polygon_points = n;
+        thread_data[i].total_inside = &total_inside;
+        thread_data[i].mutex = &mutex;
+
+        pthread_create(&threads[i], NULL, worker_thread, &thread_data[i]);
     }
-    pthread_create(&progress_thread, NULL, progress_bar, &data);
+
+    ProgressData progress_data = {
+            .total_processed = &total_processed,
+            .num_random_points = num_pontos_aleatorios,
+            .mutex = &mutex
+    };
+
+    pthread_t progress_tid;
+    pthread_create(&progress_tid, NULL, progress_thread, &progress_data);
 
     for (int i = 0; i < num_threads; i++) {
-        pthread_join(worker_threads[i], NULL);
+        pthread_join(threads[i], NULL);
+        pthread_mutex_lock(&mutex);
+        total_processed += thread_data[i].end - thread_data[i].start;
+        pthread_mutex_unlock(&mutex);
     }
-    pthread_join(progress_thread, NULL);
+
+    pthread_join(progress_tid, NULL);
 
     double area_of_reference = 4.0;
-    double estimated_area = ((double)data.points_inside / num_pontos_aleatorios) * area_of_reference;
+    double estimated_area = ((double)total_inside / num_pontos_aleatorios) * area_of_reference;
     printf("\nÁrea estimada do polígono: %.2f unidades quadradas\n", estimated_area);
 
+    free(pontos);
     free(polygon);
-    pthread_mutex_destroy(&data.mutex);
-
+    free(threads);
+    free(thread_data);
     return EXIT_SUCCESS;
 }
