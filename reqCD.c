@@ -210,8 +210,8 @@ int main(int argc, char* argv[]) {
 
     srand((unsigned int)time(NULL) + getpid());
     for (int i = 0; i < num_pontos_aleatorios; i++) {
-        pontos[i].x = (double) rand() / RAND_MAX * 2;
-        pontos[i].y = (double) rand() / RAND_MAX * 2;
+        pontos[i].x = (double) rand() / RAND_MAX * 3.0 - 1.5;
+        pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
     }
 
     int fd[num_processos_filho][2];
