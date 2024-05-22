@@ -165,8 +165,8 @@ int main(int argc, char* argv[]) {
     // Gera todos os pontos aleatórios no processo pai
     Point* pontos = malloc(num_pontos_aleatorios * sizeof(Point));
     for (int i = 0; i < num_pontos_aleatorios; i++) {
-        pontos[i].x = (double) rand() / RAND_MAX * 2;
-        pontos[i].y = (double) rand() / RAND_MAX * 2;
+        pontos[i].x = (double) rand() / RAND_MAX * 3.0 - 1.5;
+        pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////REQB////////////////////////////////////////////////////////////////////////
@@ -193,6 +193,8 @@ int main(int argc, char* argv[]) {
             // Calcula os pontos que caem dentro do polígono
             for (int j = i * pontos_por_filho; j < (i * pontos_por_filho + pontos_a_processar); j++) {
                 if (isInsidePolygon(polygon, n, pontos[j])) {
+                    snprintf(buffer, sizeof(buffer), "Ponto (%.6lf, %.6lf) está dentro do polígono.\n", pontos[j].x, pontos[j].y);
+                    write(STDOUT_FILENO, buffer, strlen(buffer));
                     pontos_dentro++;
                 }
             }

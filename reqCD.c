@@ -238,7 +238,7 @@ int main(int argc, char* argv[]) {
                     pontos_dentro++;
                     if (strcmp(modo, "verboso") == 0) {
                         char output[128];
-                        snprintf(output, sizeof(output), "%d;%lf;%lf\n", getpid(), pontos[j].x, pontos[j].y);
+                        snprintf(output, sizeof(output), "%d;%6lf;%6lf\n", getpid(), pontos[j].x, pontos[j].y);
                         if (writen2(fd[i][1], output, strlen(output)) < 0) {
                             perror("Erro ao escrever no pipe");
                             close(fd[i][1]);
@@ -307,7 +307,7 @@ int main(int argc, char* argv[]) {
     if (total_pontos_dentro > 0) {
         double area_of_reference = 4.0;
         double estimated_area = ((double)total_pontos_dentro / num_pontos_aleatorios) * area_of_reference;
-        printf("Área estimada do polígono: %.2f unidades quadradas\n", estimated_area);
+        printf("Área estimada do polígono: %.6f unidades quadradas\n", estimated_area);
     }
 
     free(pontos);

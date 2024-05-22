@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
         buffer[bytesRead] = '\0';
         line = strtok_r(buffer, "\n", &saveptr);
         while (line != NULL) {
-            if (sscanf(line, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2) {
+            if (sscanf(line, "%6lf %6lf", &polygon[n].x, &polygon[n].y) == 2) {
                 n++;
                 if (n >= capacity) {
                     capacity *= 2;
@@ -263,7 +263,7 @@ int main(int argc, char *argv[]) {
                     pontos_dentro++;
                     if (strcmp(modo, "verboso") == 0) {
                         char output[128];
-                        snprintf(output, sizeof(output), "%d;%lf;%lf\n", getpid(), pontos[j].x, pontos[j].y);
+                        snprintf(output, sizeof(output), "%d;%6lf;%6lf\n", getpid(), pontos[j].x, pontos[j].y);
                         write(STDOUT_FILENO, output, strlen(output));  // Escreve diretamente no terminal
                     }
                 }
@@ -329,7 +329,7 @@ int main(int argc, char *argv[]) {
                 printf("%d;%d;%d\n", pid, processed, inside); // Imprime as linhas lidas no modo normal
                 total_pontos_dentro += inside;
                 total_pontos_processados += processed;
-            } else if (sscanf(buffer, "%d;%lf;%lf", &pid, &x, &y) == 3) {
+            } else if (sscanf(buffer, "%d;%6lf;%6lf", &pid, &x, &y) == 3) {
                 total_pontos_dentro++;
                 total_pontos_processados++;
             }
@@ -342,7 +342,7 @@ int main(int argc, char *argv[]) {
     if (total_pontos_dentro > 0) {
         double area_of_reference = 4.0;
         double estimated_area = ((double) total_pontos_dentro / num_pontos_aleatorios) * area_of_reference;
-        printf("Área estimada do polígono: %.2f unidades quadradas\n", estimated_area);
+        printf("Área estimada do polígono: %.6f unidades quadradas\n", estimated_area);
     }
 
     free(pontos);

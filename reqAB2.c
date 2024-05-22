@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
 
     double area_of_reference = 4.0;
     double estimated_area = ((double)total_inside / num_pontos_aleatorios) * area_of_reference;
-    printf("\nÁrea estimada do polígono: %.2f unidades quadradas\n", estimated_area);
+    printf("\nÁrea estimada do polígono: %.6f unidades quadradas\n", estimated_area);
 
     free(pontos);
     free(polygon);
