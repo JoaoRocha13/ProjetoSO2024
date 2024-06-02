@@ -109,14 +109,14 @@ ssize_t writen2(int fd, const void *buffer, size_t n) {
     while (left > 0) {
         written_bytes = write(fd, ptr, left);
         if (written_bytes <= 0) {
-            if (errno == EINTR) continue;  // Handle interrupted system call
+            if (errno == EINTR) continue;
             perror("Erro ao escrever no socket");
             return -1;
         }
         left -= written_bytes;
         ptr += written_bytes;
     }
-    return (n - left);  // Deve retornar 0 se tudo foi escrito
+    return (n - left);
 }
 
 ssize_t readn2(int fd, void *buffer, size_t n) {
@@ -127,11 +127,11 @@ ssize_t readn2(int fd, void *buffer, size_t n) {
     while (left > 0) {
         read_bytes = read(fd, ptr, left);
         if (read_bytes < 0) {
-            if (errno == EINTR) continue;  // Handle interrupted system call
+            if (errno == EINTR) continue;
             perror("Erro ao ler do socket");
             return -1;
         } else if (read_bytes == 0) {
-            break; // EOF
+            break;
         }
         left -= read_bytes;
         ptr += read_bytes;
@@ -213,13 +213,18 @@ int main(int argc, char *argv[]) {
         pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
     }
 
-    int server_sock, client_sock;
-    struct sockaddr_un server_addr, client_addr;
-    socklen_t client_addr_len = sizeof(struct sockaddr_un);
 
-    // Remove o socket antigo, se existir
-    unlink(SOCKET_PATH);
 
+    //Configuração do Socket do Servidor
+
+
+    int server_sock, client_sock; // Descritores de arquivo para os sockets do servidor e do cliente
+    struct sockaddr_un server_addr, client_addr; // Estruturas de endereço para o servidor e o cliente
+    socklen_t client_addr_len = sizeof(struct sockaddr_un); // Tamanho da estrutura de endereço do cliente
+
+    unlink(SOCKET_PATH);// Remove o socket antigo, se existir
+
+    //Criação do Socket do Servidor
     server_sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (server_sock < 0) {
         perror("Erro ao criar socket do servidor");
@@ -228,10 +233,12 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    //Inicialização da Estrutura de Endereço do Servidor
     memset(&server_addr, 0, sizeof(struct sockaddr_un));
     server_addr.sun_family = AF_UNIX;
     strncpy(server_addr.sun_path, SOCKET_PATH, sizeof(server_addr.sun_path) - 1);
 
+    //Associar o socket do servidor a um endereço específico
     if (bind(server_sock, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_un)) < 0) {
         perror("Erro ao fazer bind do socket do servidor");
         close(server_sock);
@@ -240,6 +247,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    //Colocar o socket do servidor em modo de escuta, pronto para aceitar conexões.
     if (listen(server_sock, num_processos_filho) < 0) {
         perror("Erro ao escutar no socket do servidor");
         close(server_sock);
@@ -268,13 +276,13 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
-
+            //Criação e Conexão do Socket do Cliente
             int client_sock = socket(AF_UNIX, SOCK_STREAM, 0);
             if (client_sock < 0) {
                 perror("Erro ao criar socket do cliente");
                 exit(EXIT_FAILURE);
             }
-
+            //O socket cria um socket do cliente e connect estabelece a conexão com o servidor.
             if (connect(client_sock, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_un)) < 0) {
                 perror("Erro ao conectar ao socket do servidor");
                 close(client_sock);
@@ -284,7 +292,7 @@ int main(int argc, char *argv[]) {
             if (strcmp(modo, "normal") == 0) {
                 char output[128];
                 snprintf(output, sizeof(output), "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
-                if (writen2(client_sock, output, strlen(output)) < 0) {
+                if (writen2(client_sock, output, strlen(output)) < 0) { // Escreve no socket
                     perror("Erro ao escrever no socket");
                     close(client_sock);
                     exit(EXIT_FAILURE);
@@ -305,12 +313,12 @@ int main(int argc, char *argv[]) {
             pids[i] = pid;
         }
     }
-
+    //Aceitação de Conexões e Leitura dos Dados no Processo Pai
     int total_pontos_dentro = 0;
     int total_pontos_processados = 0;
 
     for (int i = 0; i < num_processos_filho; i++) {
-        client_sock = accept(server_sock, (struct sockaddr *) &client_addr, &client_addr_len);
+        client_sock = accept(server_sock, (struct sockaddr *) &client_addr, &client_addr_len); // Aceita conexão do cliente
         if (client_sock < 0) {
             perror("Erro ao aceitar conexão do cliente");
             continue;
@@ -318,7 +326,7 @@ int main(int argc, char *argv[]) {
 
         char buffer[BUFFER_SIZE];
         ssize_t bytesRead;
-        while ((bytesRead = readn2(client_sock, buffer, sizeof(buffer) - 1)) > 0) {
+        while ((bytesRead = readn2(client_sock, buffer, sizeof(buffer) - 1)) > 0) { // Lê do socket
             buffer[bytesRead] = '\0';
             int pid, processed, inside;
             double x, y;
