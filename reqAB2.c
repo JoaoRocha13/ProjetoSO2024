@@ -22,9 +22,9 @@ typedef struct {
     int end;
     int num_polygon_points;
     int *total_inside;
+    int *total_processed;
     pthread_mutex_t *mutex;
 } ThreadData;
-
 typedef struct {
     int *total_processed;
     int num_random_points;
@@ -111,7 +111,7 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
 
     return count & 1;
 }
-
+// Função que cada thread irá executar para processar pontos
 void *worker_thread(void *arg) {
     ThreadData *data = (ThreadData *)arg;
     int local_inside = 0;
@@ -120,8 +120,14 @@ void *worker_thread(void *arg) {
         if (isInsidePolygon(data->polygon, data->num_polygon_points, data->points[i])) {
             local_inside++;
         }
+
+        // Incrementa o total de pontos processados com mutex
+        pthread_mutex_lock(data->mutex);
+        (*(data->total_processed))++;
+        pthread_mutex_unlock(data->mutex);
     }
 
+    // Atualiza o total de pontos dentro do polígono com mutex
     pthread_mutex_lock(data->mutex);
     *(data->total_inside) += local_inside;
     pthread_mutex_unlock(data->mutex);
@@ -129,10 +135,13 @@ void *worker_thread(void *arg) {
     pthread_exit(NULL);
 }
 
+// Função que a thread de progresso irá executar para mostrar o progresso
 void *progress_thread(void *arg) {
     ProgressData *progress_data = (ProgressData *)arg;
+
     while (1) {
         sleep(1);
+        // Calcula o progresso do processamento com mutex
         pthread_mutex_lock(progress_data->mutex);
         int progress = (*(progress_data->total_processed) * 100) / progress_data->num_random_points;
         pthread_mutex_unlock(progress_data->mutex);
@@ -140,9 +149,9 @@ void *progress_thread(void *arg) {
         fflush(stdout);
         if (progress >= 100) break;
     }
+
     pthread_exit(NULL);
 }
-
 int main(int argc, char *argv[]) {
     if (argc != 4) {
         fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_threads> <num_pontos_aleatorios>\n", argv[0]);
@@ -218,15 +227,18 @@ int main(int argc, char *argv[]) {
         pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
     }
 
+    // Aloca memória para as threads e os dados das threads
     pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
-    ThreadData *thread_data = malloc(num_threads * sizeof(ThreadData));
+    pthread_t progress_tid;
+    ThreadData *thread_data = malloc(num_threads * sizeof(ThreadData));// Aloca memória para os dados das threads
     int total_inside = 0;
     int total_processed = 0;
-    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; // Inicializa o mutex
 
     int points_per_thread = num_pontos_aleatorios / num_threads;
     int remaining_points = num_pontos_aleatorios % num_threads;
 
+    // Cria threads de processamento
     for (int i = 0; i < num_threads; i++) {
         thread_data[i].points = pontos;
         thread_data[i].polygon = polygon;
@@ -237,27 +249,28 @@ int main(int argc, char *argv[]) {
         }
         thread_data[i].num_polygon_points = n;
         thread_data[i].total_inside = &total_inside;
+        thread_data[i].total_processed = &total_processed;
         thread_data[i].mutex = &mutex;
 
         pthread_create(&threads[i], NULL, worker_thread, &thread_data[i]);
     }
 
+    // Dados para a thread de progresso
     ProgressData progress_data = {
             .total_processed = &total_processed,
             .num_random_points = num_pontos_aleatorios,
             .mutex = &mutex
     };
 
-    pthread_t progress_tid;
+    // Cria a thread de progresso
     pthread_create(&progress_tid, NULL, progress_thread, &progress_data);
 
+    // Aguarda a conclusão de todas as threads de processamento
     for (int i = 0; i < num_threads; i++) {
         pthread_join(threads[i], NULL);
-        pthread_mutex_lock(&mutex);
-        total_processed += thread_data[i].end - thread_data[i].start;
-        pthread_mutex_unlock(&mutex);
     }
 
+    // Aguarda a conclusão da thread de progresso
     pthread_join(progress_tid, NULL);
 
     double area_of_reference = 4.0;
