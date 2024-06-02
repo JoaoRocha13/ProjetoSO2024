@@ -1,6 +1,5 @@
-//
-// Created by so on 17-05-2024.
-//
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -16,6 +15,8 @@ typedef struct {
     double x;
     double y;
 } Point;
+
+
 
 /**
  * @brief Determines the orientation of an ordered triplet (p, q, r).
@@ -98,39 +99,41 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
     return count&1;
 }
 ssize_t writen2(int fd, const void *buffer, size_t n) {
-    size_t left = n;
-    ssize_t written_bytes;
-    const char *ptr = (const char*) buffer;
-    while (left > 0) {
-        written_bytes = write(fd, ptr, left);
-        if (written_bytes <= 0) {
-            if (errno == EINTR) continue;
-            perror("Erro ao escrever no pipe");
-            return -1;
+    size_t left = n;                 // Tamanho restante de bytes a serem escritos
+    ssize_t written_bytes;           // Número de bytes realmente escritos em cada chamada de write
+    const char *ptr = (const char*) buffer;  // Ponteiro para o buffer de dados que será escrito
+
+    while (left > 0) {               // Continua até que todos os bytes tenham sido escritos
+        written_bytes = write(fd, ptr, left); // Tenta escrever os bytes restantes
+        if (written_bytes <= 0) {    // Se houver um erro ou interrupção
+            if (errno == EINTR) continue; // Se a escrita for interrompida por um sinal, tenta novamente
+            perror("Erro ao escrever no pipe"); // Se ocorrer outro erro, imprime mensagem de erro
+            return -1;               // Retorna -1 para indicar falha
         }
-        left -= written_bytes;
-        ptr += written_bytes;
+        left -= written_bytes;       // Decrementa o número de bytes restantes a serem escritos
+        ptr += written_bytes;        // Move o ponteiro para o próximo bloco de dados a ser escrito
     }
-    return (n - left);
+    return (n - left);               // Retorna o número total de bytes escritos
 }
 
 ssize_t readn2(int fd, void *buffer, size_t n) {
-    size_t left = n;
-    ssize_t read_bytes;
-    char *ptr = (char*) buffer;
-    while (left > 0) {
-        read_bytes = read(fd, ptr, left);
-        if (read_bytes < 0) {
-            if (errno == EINTR) continue;
-            perror("Erro ao ler do pipe");
-            return -1;
-        } else if (read_bytes == 0) {
+    size_t left = n;                 // Tamanho restante de bytes a serem lidos
+    ssize_t read_bytes;              // Número de bytes realmente lidos em cada chamada de read
+    char *ptr = (char*) buffer;      // Ponteiro para o buffer onde os dados serão armazenados
+
+    while (left > 0) {               // Continua até que todos os bytes tenham sido lidos
+        read_bytes = read(fd, ptr, left); // Tenta ler os bytes restantes
+        if (read_bytes < 0) {        // Se houver um erro
+            if (errno == EINTR) continue; // Se a leitura for interrompida por um sinal, tenta novamente
+            perror("Erro ao ler do pipe"); // Se ocorrer outro erro, imprime mensagem de erro
+            return -1;               // Retorna -1 para indicar falha
+        } else if (read_bytes == 0) { // Se a leitura retornar 0, significa que o pipe foi fechado
             break;
         }
-        left -= read_bytes;
-        ptr += read_bytes;
+        left -= read_bytes;          // Decrementa o número de bytes restantes a serem lidos
+        ptr += read_bytes;           // Move o ponteiro para o próximo bloco de dados a ser lido
     }
-    return (n - left);
+    return (n - left);               // Retorna o número total de bytes lidos
 }
 
 void update_progress(int total_processed, int total_points) {
@@ -213,10 +216,10 @@ int main(int argc, char* argv[]) {
         pontos[i].x = (double) rand() / RAND_MAX * 3.0 - 1.5;
         pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
     }
-
+//cria pipes e processos filhos, atribui tarefas a cada filho, e garante a comunicação dos resultados via pipes.
     int fd[num_processos_filho][2];
     pid_t pids[num_processos_filho];
-
+//pipe para cada processo filho
     for (int i = 0; i < num_processos_filho; i++) {
         if (pipe(fd[i]) == -1) {
             perror("Erro ao criar pipe");
@@ -225,20 +228,22 @@ int main(int argc, char* argv[]) {
             return EXIT_FAILURE;
         }
 
-        pid_t pid = fork();
+        pid_t pid = fork();// Cria um novo processo filho
         if (pid == 0) {
-            close(fd[i][0]);
+            close(fd[i][0]);// Fecha o descritor de leitura no processo filho, pois ele só escreverá no pipe.
             int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
             int pontos_extra = num_pontos_aleatorios % num_processos_filho;
             int pontos_a_processar = pontos_por_filho + (i < pontos_extra ? 1 : 0);
             int pontos_dentro = 0;
 
+            // Processa os pontos atribuídos a este filho
             for (int j = i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra); j < i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra) + pontos_a_processar; j++) {
                 if (isInsidePolygon(polygon, n, pontos[j])) {
                     pontos_dentro++;
                     if (strcmp(modo, "verboso") == 0) {
                         char output[128];
                         snprintf(output, sizeof(output), "%d;%6lf;%6lf\n", getpid(), pontos[j].x, pontos[j].y);
+                        // Escreve os resultados no pipe
                         if (writen2(fd[i][1], output, strlen(output)) < 0) {
                             perror("Erro ao escrever no pipe");
                             close(fd[i][1]);
@@ -253,6 +258,7 @@ int main(int argc, char* argv[]) {
             if (strcmp(modo, "normal") == 0) {
                 char output[128];
                 snprintf(output, sizeof(output), "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
+                // Escreve os resultados no pipe
                 if (writen2(fd[i][1], output, strlen(output)) < 0) {
                     perror("Erro ao escrever no pipe");
                     close(fd[i][1]);
@@ -272,20 +278,21 @@ int main(int argc, char* argv[]) {
             free(polygon);
             return EXIT_FAILURE;
         } else {
-            pids[i] = pid;
+            pids[i] = pid; // Armazena o ID do processo filho
             close(fd[i][1]);
         }
     }
-
+//lida com a leitura dos dados dos pipes dos processos filhos
     int total_pontos_dentro = 0;
     int total_pontos_processados = 0;
 
     for (int i = 0; i < num_processos_filho; i++) {
         char buffer[1024];
         ssize_t bytesRead;
+        //Leitura dos Dados dos Pipes
         while ((bytesRead = readn2(fd[i][0], buffer, sizeof(buffer) - 1)) > 0) {
             buffer[bytesRead] = '\0';
-            int pid, processed, inside;
+            int pid, processed, inside;// Variáveis para armazenar os dados lidos
             double x, y;
             if (strcmp(modo, "verboso") == 0) {
                 printf("%s", buffer);  // Imprime diretamente as linhas lidas no modo verboso
