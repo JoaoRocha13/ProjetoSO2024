@@ -231,16 +231,30 @@ int main(int argc, char *argv[]) {
                 exit(EXIT_FAILURE);
             }
 
+            // Cria uma estrutura sockaddr_un para representar o endereço do servidor
             struct sockaddr_un server_addr;
-            memset(&server_addr, 0, sizeof(struct sockaddr_un));
-            server_addr.sun_family = AF_UNIX;
-            strncpy(server_addr.sun_path, SOCKET_PATH, sizeof(server_addr.sun_path) - 1);
-
+            memset(&server_addr, 0, sizeof(struct sockaddr_un)); // Limpa a estrutura de endereço
+            server_addr.sun_family = AF_UNIX; // Define o tipo de endereço como AF_UNIX (Unix Domain)
+            strncpy(server_addr.sun_path, SOCKET_PATH, sizeof(server_addr.sun_path) - 1); // Copia o caminho do socket para a estrutura de endereço
             printf("Tentando conectar ao servidor...\n");
+
+            // Tenta estabelecer a conexão com o servidor
             if (connect(client_sock, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_un)) < 0) {
                 perror("Erro ao conectar ao socket do servidor");
                 close(client_sock);
                 exit(EXIT_FAILURE);
+            }
+            printf("Conectado ao servidor.\n");
+            if (strcmp(modo, "normal") == 0) {
+                // Cria uma string formatada contendo os dados a serem enviados para o servidor
+                char output[128];
+                snprintf(output, sizeof(output), "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
+                // Envia os dados para o servidor através do socket do cliente
+                if (writen2(client_sock, output, strlen(output)) < 0) {
+                    perror("Erro ao escrever no socket");
+                    close(client_sock);
+                    exit(EXIT_FAILURE);
+                }
             }
             printf("Conectado ao servidor.\n");
 
