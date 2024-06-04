@@ -100,6 +100,7 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
     return count & 1;
 }
 
+// Função para escrever dados em um socket, garantindo a escrita completa
 ssize_t writen2(int fd, const void *buffer, size_t n) {
     size_t left = n;
     ssize_t written_bytes;
@@ -124,22 +125,26 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    // Extrai argumentos da linha de comando
     char *poligono = argv[1];
     int num_processos_filho = atoi(argv[2]);
     int num_pontos_aleatorios = atoi(argv[3]);
     char *modo = argv[4];
 
+    // Verifica se os argumentos são válidos
     if (num_processos_filho <= 0 || num_pontos_aleatorios <= 0) {
         fprintf(stderr, "Erro: Números de processos e pontos devem ser maiores que 0.\n");
         return EXIT_FAILURE;
     }
 
+    // Abre o arquivo do polígono para leitura
     int arquivo = open(poligono, O_RDONLY);
     if (arquivo < 0) {
         perror("Erro ao abrir o arquivo do polígono");
         return EXIT_FAILURE;
     }
 
+    // Aloca memória para armazenar os pontos do polígono
     Point *polygon = malloc(100 * sizeof(Point));
     if (polygon == NULL) {
         perror("Erro ao alocar memória para o polígono");
@@ -152,6 +157,7 @@ int main(int argc, char *argv[]) {
     ssize_t bytesRead;
     char *line, *saveptr;
 
+    // Lê os pontos do polígono do arquivo
     while ((bytesRead = read(arquivo, buffer, sizeof(buffer) - 1)) > 0) {
         buffer[bytesRead] = '\0';
         line = strtok_r(buffer, "\n", &saveptr);
@@ -174,24 +180,29 @@ int main(int argc, char *argv[]) {
 
     close(arquivo);
 
+    // Verifica se o polígono é válido
     if (n < 3) {
         fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
         free(polygon);
         return EXIT_FAILURE;
     }
 
+    // Aloca memória para armazenar pontos aleatórios
     Point *pontos = malloc(num_pontos_aleatorios * sizeof(Point));
     if (pontos == NULL) {
         perror("Erro ao alocar memória para pontos");
         free(polygon);
         return EXIT_FAILURE;
     }
+
+    // Gera pontos aleatórios
     srand((unsigned int) time(NULL) + getpid());
     for (int i = 0; i < num_pontos_aleatorios; i++) {
         pontos[i].x = (double) rand() / RAND_MAX * 3.0 - 1.5;
         pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
     }
 
+    // Cria processos filhos para processar pontos e se comunicar com o servidor
     for (int i = 0; i < num_processos_filho; i++) {
         pid_t pid = fork();
         if (pid == 0) {  // Processo filho
@@ -200,9 +211,11 @@ int main(int argc, char *argv[]) {
             int pontos_a_processar = pontos_por_filho + (i < pontos_extra ? 1 : 0);
             int pontos_dentro = 0;
 
+            // Processa pontos e verifica se estão dentro do polígono
             for (int j = i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra); j < i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra) + pontos_a_processar; j++) {
                 if (isInsidePolygon(polygon, n, pontos[j])) {
                     pontos_dentro++;
+                    // Se o modo for 'verboso', imprime os pontos dentro do polígono
                     if (strcmp(modo, "verboso") == 0) {
                         char output[128];
                         snprintf(output, sizeof(output), "%d;%6lf;%6lf\n", getpid(), pontos[j].x, pontos[j].y);
@@ -211,6 +224,7 @@ int main(int argc, char *argv[]) {
                 }
             }
 
+            // Conecta-se ao servidor e envia dados
             int client_sock = socket(AF_UNIX, SOCK_STREAM, 0);
             if (client_sock < 0) {
                 perror("Erro ao criar socket do cliente");
@@ -230,6 +244,7 @@ int main(int argc, char *argv[]) {
             }
             printf("Conectado ao servidor.\n");
 
+            // Envia dados para o servidor
             if (strcmp(modo, "normal") == 0) {
                 char output[128];
                 snprintf(output, sizeof(output), "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
@@ -252,9 +267,11 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Libera a memória alocada
     free(pontos);
     free(polygon);
 
+    // Aguarda todos os processos filhos terminarem
     while (wait(NULL) > 0);
 
     return EXIT_SUCCESS;
