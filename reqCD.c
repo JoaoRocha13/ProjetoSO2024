@@ -190,7 +190,7 @@ int main(int argc, char* argv[]) {
             free(polygon);
             exit(EXIT_FAILURE);
         }
-
+        // Cria um processo filho
         pid_t pid = fork();
         if (pid == 0) {
             close(fd[i][0]);
@@ -199,6 +199,7 @@ int main(int argc, char* argv[]) {
             int pontos_a_processar = pontos_por_filho + (i < pontos_extra ? 1 : 0);
             int pontos_dentro = 0;
 
+            // Verifica quais pontos estão dentro do polígono
             for (int j = i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra); j < i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra) + pontos_a_processar; j++) {
                 if (isInsidePolygon(polygon, n, pontos[j])) {
                     pontos_dentro++;
@@ -230,14 +231,14 @@ int main(int argc, char* argv[]) {
             close(fd[i][1]);
         }
     }
-
+    // Aguarda a finalização dos processos filhos
     int total_pontos_dentro = 0;
     int total_pontos_processados = 0;
 
     for (int i = 0; i < num_processos_filho; i++) {
         char buffer[1024];
         ssize_t bytesRead;
-
+    // Lê os resultados dos processos filhos
         while ((bytesRead = read(fd[i][0], buffer, sizeof(buffer) - 1)) > 0) {
             buffer[bytesRead] = '\0';
             int pid, processed, inside;

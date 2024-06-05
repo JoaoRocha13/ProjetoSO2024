@@ -111,19 +111,20 @@ int main(int argc, char* argv[]) {
         perror("Erro ao abrir o arquivo");
         exit(EXIT_FAILURE);
     }
-    Point* polygon = malloc(100 * sizeof(Point));// Alocação inicial de memória para armazenar os pontos do polígono.
-    int capacity = 100; // Capacidade inicial do array de pontos do polígono.
+    // Alocação de memória para armazenar os pontos do polígono.
+    Point* polygon = malloc(100 * sizeof(Point));
+    int capacity = 100;
     int n = 0;
-    char buffer[128];// Buffer para armazenar temporariamente dados lidos do arquivo
-    ssize_t bytesRead;// Variável para armazenar o número de bytes lidos na última operação de leitura.
+    char buffer[128];
+    ssize_t bytesRead;
     char *line, *saveptr;
 
     //lê os pontos do polígono a partir de um arquivo e armazena esses pontos em um array dinâmico.
-    while ((bytesRead = read(arquivo, buffer, sizeof(buffer) - 1)) > 0) { //Ler dados do arquivo em blocos de até 127 bytes (o tamanho do buffer menos um)
-        buffer[bytesRead] = '\0'; // Adicionar terminador nulo ao final do buffer.
-        line = strtok_r(buffer, "\n", &saveptr);//Dividir o conteúdo do buffer em linhas.
+    while ((bytesRead = read(arquivo, buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytesRead] = '\0';
+        line = strtok_r(buffer, "\n", &saveptr);
         while (line != NULL) {
-            if (sscanf(line, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2) {//Ler os pontos da linha e armazená-los no array de pontos do polígono.
+            if (sscanf(line, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2) {
                 n++;
                 if (n >= capacity) {
                     capacity *= 2;
@@ -223,6 +224,7 @@ int main(int argc, char* argv[]) {
         free(pontos);
         exit(EXIT_FAILURE);
     }
+    //Leitura dos resultados dos processos filhos
     char resultBuffer[128];
     ssize_t resultBytesRead;
     while ((resultBytesRead = read(fd, resultBuffer, sizeof(resultBuffer) - 1)) > 0) {
