@@ -1,10 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-#include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <math.h>
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -19,57 +16,34 @@ typedef struct {
     double y;
 } Point;
 
-//Função para ler dados de um socket, garantindo a leitura completa
-ssize_t readn2(int fd, void *buffer, size_t n) {
-    size_t left = n;
-    ssize_t read_bytes;
-    char *ptr = (char *) buffer;
-
-    while (left > 0) {
-        read_bytes = read(fd, ptr, left);
-        if (read_bytes < 0) {
-            if (errno == EINTR) continue;
-            perror("Erro ao ler do socket");
-            return -1;
-        } else if (read_bytes == 0) {
-            break;
-        }
-        left -= read_bytes;
-        ptr += read_bytes;
-    }
-    return (n - left);
-}
-
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios>\n", argv[0]);
-        return EXIT_FAILURE;
+        char usage[] = "Uso: <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios>\n";
+        write(STDERR_FILENO, usage, strlen(usage));
+        exit(EXIT_FAILURE);
     }
 
-    // Extrai argumentos da linha de comando
     char *poligono = argv[1];
     int num_processos_filho = atoi(argv[2]);
     int num_pontos_aleatorios = atoi(argv[3]);
 
-    // Verifica se os argumentos são válidos
     if (num_processos_filho <= 0 || num_pontos_aleatorios <= 0) {
-        fprintf(stderr, "Erro: Números de processos e pontos devem ser maiores que 0.\n");
-        return EXIT_FAILURE;
+        char error[] = "Erro: Números de processos e pontos devem ser maiores que 0.\n";
+        write(STDERR_FILENO, error, strlen(error));
+        exit(EXIT_FAILURE);
     }
 
-    // Abre o arquivo do polígono para leitura
     int arquivo = open(poligono, O_RDONLY);
     if (arquivo < 0) {
         perror("Erro ao abrir o arquivo do polígono");
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    // Aloca memória para armazenar os pontos do polígono
     Point *polygon = malloc(100 * sizeof(Point));
     if (polygon == NULL) {
         perror("Erro ao alocar memória para o polígono");
         close(arquivo);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
     int capacity = 100;
     int n = 0;
@@ -77,7 +51,6 @@ int main(int argc, char *argv[]) {
     ssize_t bytesRead;
     char *line, *saveptr;
 
-    // Lê os pontos do polígono do arquivo
     while ((bytesRead = read(arquivo, buffer, sizeof(buffer) - 1)) > 0) {
         buffer[bytesRead] = '\0';
         line = strtok_r(buffer, "\n", &saveptr);
@@ -90,7 +63,7 @@ int main(int argc, char *argv[]) {
                     if (polygon == NULL) {
                         perror("Erro ao realocar memória para o polígono");
                         close(arquivo);
-                        return EXIT_FAILURE;
+                        exit(EXIT_FAILURE);
                     }
                 }
             }
@@ -100,76 +73,72 @@ int main(int argc, char *argv[]) {
 
     close(arquivo);
 
-    // Verifica se o polígono é válido
     if (n < 3) {
-        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
+        char error[] = "Polígono inválido ou dados insuficientes no arquivo.\n";
+        write(STDERR_FILENO, error, strlen(error));
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    // Remove o socket antigo, se existir
     if (unlink(SOCKET_PATH) == -1 && errno != ENOENT) {
         perror("Erro ao remover socket antigo");
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    // Cria um socket do tipo UNIX para comunicação com os clientes
     int server_sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (server_sock < 0) {
         perror("Erro ao criar socket do servidor");
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    // Configuração do endereço do servidor
     struct sockaddr_un server_addr;
     memset(&server_addr, 0, sizeof(struct sockaddr_un));
     server_addr.sun_family = AF_UNIX;
     strncpy(server_addr.sun_path, SOCKET_PATH, sizeof(server_addr.sun_path) - 1);
 
-    // Faz o bind do socket do servidor ao endereço
     if (bind(server_sock, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_un)) < 0) {
         perror("Erro ao fazer bind do socket do servidor");
         close(server_sock);
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    // Coloca o socket do servidor no modo de escuta
     if (listen(server_sock, num_processos_filho) < 0) {
         perror("Erro ao escutar no socket do servidor");
         close(server_sock);
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    printf("Servidor pronto e esperando conexões...\n");
+    char msg[] = "Servidor pronto e esperando conexões...\n";
+    write(STDOUT_FILENO, msg, strlen(msg));
 
-    // Variáveis para acompanhar o progresso da estimativa da área
     int total_pontos_dentro = 0;
     int total_pontos_processados = 0;
 
-    // Loop para aceitar conexões dos clientes
     for (int i = 0; i < num_processos_filho; i++) {
-        printf("Aguardando conexão do cliente %d...\n", i + 1);
-        // Aceita uma conexão de cliente
+        char waiting_msg[50];
+        sprintf(waiting_msg, "Aguardando conexão do cliente %d...\n", i + 1);
+        write(STDOUT_FILENO, waiting_msg, strlen(waiting_msg));
         int client_sock = accept(server_sock, NULL, NULL);
         if (client_sock < 0) {
             perror("Erro ao aceitar conexão do cliente");
             continue;
         }
 
-        printf("Cliente conectado: %d\n", i + 1);
+        char connected_msg[30];
+        sprintf(connected_msg, "Cliente conectado: %d\n", i + 1);
+        write(STDOUT_FILENO, connected_msg, strlen(connected_msg));
 
         char buffer[BUFFER_SIZE];
         ssize_t bytesRead;
-        // Loop para ler dados do cliente
-        while ((bytesRead = readn2(client_sock, buffer, sizeof(buffer) - 1)) > 0) {
+
+        while ((bytesRead = read(client_sock, buffer, sizeof(buffer) - 1)) > 0) {
             buffer[bytesRead] = '\0';
             int pid, processed, inside;
             double x, y;
-            // Verifica o formato dos dados recebidos e atualiza as variáveis de progresso
             if (sscanf(buffer, "%d;%d;%d", &pid, &processed, &inside) == 3) {
                 printf("%d;%d;%d\n", pid, processed, inside);
                 total_pontos_dentro += inside;
@@ -179,23 +148,23 @@ int main(int argc, char *argv[]) {
                 total_pontos_processados++;
             }
         }
-        printf("Cliente %d desconectado.\n", i + 1);
+
+        char disconnected_msg[30];
+        sprintf(disconnected_msg, "Cliente %d desconectado.\n", i + 1);
+        write(STDOUT_FILENO, disconnected_msg, strlen(disconnected_msg));
         close(client_sock);
     }
 
-    // Aguarda todos os processos filhos terminarem
     while (wait(NULL) > 0);
 
-    // Calcula e imprime a área estimada do polígono
     if (total_pontos_dentro > 0) {
         double area_of_reference = 4.0;
         double estimated_area = ((double) total_pontos_dentro / num_pontos_aleatorios) * area_of_reference;
         printf("Área estimada do polígono: %.6f unidades quadradas\n", estimated_area);
     }
 
-    // Libera a memória alocada e fecha o socket do servidor
     free(polygon);
     close(server_sock);
     unlink(SOCKET_PATH);
-    return EXIT_SUCCESS;
+    exit(EXIT_FAILURE);
 }

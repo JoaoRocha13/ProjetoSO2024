@@ -89,18 +89,18 @@ int main(int argc, char* argv[]) {
     srand((unsigned int) time(NULL));
 
     if (argc != 4) {
-        fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios>\n", argv[0]);
+        char usage[] = "Uso: <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios>\n";
+        write(STDERR_FILENO, usage, strlen(usage));
         exit(EXIT_FAILURE);
     }
 
     char *poligono = argv[1];
-    //criação de processos e a geração de pontos, precisamos convertê-los para inteiros. Isso permite que possamos
-    // realizar operações aritméticas, controle de iteração e outras operações numéricas necessárias no programa.
     int num_processos_filho = atoi(argv[2]);
     int num_pontos_aleatorios = atoi(argv[3]);
 
     if (num_processos_filho <= 0 || num_pontos_aleatorios <= 0) {
-        fprintf(stderr, "Erro: Números de processos e pontos devem ser maiores que 0.\n");
+        char error[] = "Erro: Números de processos e pontos devem ser maiores que 0.\n";
+        write(STDERR_FILENO, error, strlen(error));
         exit(EXIT_FAILURE);
     }
 
@@ -120,10 +120,10 @@ int main(int argc, char* argv[]) {
 
     //lê os pontos do polígono a partir de um arquivo e armazena esses pontos em um array dinâmico.
     while ((bytesRead = read(arquivo, buffer, sizeof(buffer) - 1)) > 0) { //Ler dados do arquivo em blocos de até 127 bytes (o tamanho do buffer menos um)
-        buffer[bytesRead] = '\0';
+        buffer[bytesRead] = '\0'; // Adicionar terminador nulo ao final do buffer.
         line = strtok_r(buffer, "\n", &saveptr);//Dividir o conteúdo do buffer em linhas.
         while (line != NULL) {
-            if (sscanf(line, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2) {
+            if (sscanf(line, "%lf %lf", &polygon[n].x, &polygon[n].y) == 2) {//Ler os pontos da linha e armazená-los no array de pontos do polígono.
                 n++;
                 if (n >= capacity) {
                     capacity *= 2;
@@ -136,16 +136,17 @@ int main(int argc, char* argv[]) {
 
     close(arquivo);
 
+
     if (n < 3) {
-        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
+        char error[] = "Polígono inválido ou dados insuficientes no arquivo.\n";
+        write(STDERR_FILENO, error, strlen(error));
         free(polygon);
         exit(EXIT_FAILURE);
     }
-
     Point* pontos = malloc(num_pontos_aleatorios * sizeof(Point));
     for (int i = 0; i < num_pontos_aleatorios; i++) {
-        pontos[i].x = (double) rand() / RAND_MAX * 3.0 - 1.5;
-        pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
+        pontos[i].x = (double) rand() / RAND_MAX * 2.0 - 1.0;
+        pontos[i].y = (double) rand() / RAND_MAX * 2.0 - 1.0;
     }
 
     int fd = open("resultados.txt", O_WRONLY | O_CREAT | O_TRUNC, 0666);

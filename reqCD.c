@@ -1,5 +1,3 @@
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -16,8 +14,6 @@ typedef struct {
     double y;
 } Point;
 
-
-
 /**
  * @brief Determines the orientation of an ordered triplet (p, q, r).
  * @param p First point of the triplet.
@@ -29,7 +25,7 @@ int orientation(Point p, Point q, Point r) {
     double val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
 
     if (val == 0) return 0;
-    return (val > 0)? 1: 2;
+    return (val > 0) ? 1 : 2;
 }
 
 /**
@@ -86,7 +82,7 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
 
     int count = 0, i = 0;
     do {
-        int next = (i+1)%n;
+        int next = (i + 1) % n;
 
         if (doIntersect(polygon[i], polygon[next], p, extreme)) {
             if (orientation(polygon[i], p, polygon[next]) == 0)
@@ -96,44 +92,7 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
         i = next;
     } while (i != 0);
 
-    return count&1;
-}
-ssize_t writen2(int fd, const void *buffer, size_t n) {
-    size_t left = n;                 // Tamanho restante de bytes a serem escritos
-    ssize_t written_bytes;           // Número de bytes realmente escritos em cada chamada de write
-    const char *ptr = (const char*) buffer;  // Ponteiro para o buffer de dados que será escrito
-
-    while (left > 0) {               // Continua até que todos os bytes tenham sido escritos
-        written_bytes = write(fd, ptr, left); // Tenta escrever os bytes restantes
-        if (written_bytes <= 0) {    // Se houver um erro ou interrupção
-            if (errno == EINTR) continue; // Se a escrita for interrompida por um sinal, tenta novamente
-            perror("Erro ao escrever no pipe"); // Se ocorrer outro erro, imprime mensagem de erro
-            return -1;               // Retorna -1 para indicar falha
-        }
-        left -= written_bytes;       // Decrementa o número de bytes restantes a serem escritos
-        ptr += written_bytes;        // Move o ponteiro para o próximo bloco de dados a ser escrito
-    }
-    return (n - left);               // Retorna o número total de bytes escritos
-}
-
-ssize_t readn2(int fd, void *buffer, size_t n) {
-    size_t left = n;                 // Tamanho restante de bytes a serem lidos
-    ssize_t read_bytes;              // Número de bytes realmente lidos em cada chamada de read
-    char *ptr = (char*) buffer;      // Ponteiro para o buffer onde os dados serão armazenados
-
-    while (left > 0) {               // Continua até que todos os bytes tenham sido lidos
-        read_bytes = read(fd, ptr, left); // Tenta ler os bytes restantes
-        if (read_bytes < 0) {        // Se houver um erro
-            if (errno == EINTR) continue; // Se a leitura for interrompida por um sinal, tenta novamente
-            perror("Erro ao ler do pipe"); // Se ocorrer outro erro, imprime mensagem de erro
-            return -1;               // Retorna -1 para indicar falha
-        } else if (read_bytes == 0) { // Se a leitura retornar 0, significa que o pipe foi fechado
-            break;
-        }
-        left -= read_bytes;          // Decrementa o número de bytes restantes a serem lidos
-        ptr += read_bytes;           // Move o ponteiro para o próximo bloco de dados a ser lido
-    }
-    return (n - left);               // Retorna o número total de bytes lidos
+    return count & 1;
 }
 
 void update_progress(int total_processed, int total_points) {
@@ -142,10 +101,12 @@ void update_progress(int total_processed, int total_points) {
     fflush(stdout);
 }
 
+
 int main(int argc, char* argv[]) {
     if (argc != 5) {
-        fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios> <modo>\n", argv[0]);
-        return EXIT_FAILURE;
+        char usage[] = "Uso: <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios> <modo>\n";
+        write(STDERR_FILENO, usage, strlen(usage));
+        exit(EXIT_FAILURE);
     }
 
     char *poligono = argv[1];
@@ -154,21 +115,22 @@ int main(int argc, char* argv[]) {
     char *modo = argv[4];
 
     if (num_processos_filho <= 0 || num_pontos_aleatorios <= 0) {
-        fprintf(stderr, "Erro: Números de processos e pontos devem ser maiores que 0.\n");
-        return EXIT_FAILURE;
+        char error[] = "Erro: Números de processos e pontos devem ser maiores que 0.\n";
+        write(STDERR_FILENO, error, strlen(error));
+        exit(EXIT_FAILURE);
     }
 
     int arquivo = open(poligono, O_RDONLY);
     if (arquivo < 0) {
         perror("Erro ao abrir o arquivo do polígono");
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
     Point* polygon = malloc(100 * sizeof(Point));
     if (polygon == NULL) {
         perror("Erro ao alocar memória para o polígono");
         close(arquivo);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
     int capacity = 100;
     int n = 0;
@@ -188,7 +150,7 @@ int main(int argc, char* argv[]) {
                     if (polygon == NULL) {
                         perror("Erro ao realocar memória para o polígono");
                         close(arquivo);
-                        return EXIT_FAILURE;
+                        exit(EXIT_FAILURE);
                     }
                 }
             }
@@ -199,58 +161,51 @@ int main(int argc, char* argv[]) {
     close(arquivo);
 
     if (n < 3) {
-        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
+        char error[] = "Polígono inválido ou dados insuficientes no arquivo.\n";
+        write(STDERR_FILENO, error, strlen(error));
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
     Point* pontos = malloc(num_pontos_aleatorios * sizeof(Point));
     if (pontos == NULL) {
         perror("Erro ao alocar memória para pontos");
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
     srand((unsigned int)time(NULL) + getpid());
     for (int i = 0; i < num_pontos_aleatorios; i++) {
-        pontos[i].x = (double) rand() / RAND_MAX * 3.0 - 1.5;
-        pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
+        pontos[i].x = (double) rand() / RAND_MAX * 2.0 - 1.0;
+        pontos[i].y = (double) rand() / RAND_MAX * 2.0 - 1.0;
     }
-//cria pipes e processos filhos, atribui tarefas a cada filho, e garante a comunicação dos resultados via pipes.
+
     int fd[num_processos_filho][2];
     pid_t pids[num_processos_filho];
-//pipe para cada processo filho
+
     for (int i = 0; i < num_processos_filho; i++) {
         if (pipe(fd[i]) == -1) {
             perror("Erro ao criar pipe");
             free(pontos);
             free(polygon);
-            return EXIT_FAILURE;
+            exit(EXIT_FAILURE);
         }
 
-        pid_t pid = fork();// Cria um novo processo filho
+        pid_t pid = fork();
         if (pid == 0) {
-            close(fd[i][0]);// Fecha o descritor de leitura no processo filho, pois ele só escreverá no pipe.
+            close(fd[i][0]);
             int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
             int pontos_extra = num_pontos_aleatorios % num_processos_filho;
             int pontos_a_processar = pontos_por_filho + (i < pontos_extra ? 1 : 0);
             int pontos_dentro = 0;
 
-            // Processa os pontos atribuídos a este filho
             for (int j = i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra); j < i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra) + pontos_a_processar; j++) {
                 if (isInsidePolygon(polygon, n, pontos[j])) {
                     pontos_dentro++;
                     if (strcmp(modo, "verboso") == 0) {
                         char output[128];
                         snprintf(output, sizeof(output), "%d;%6lf;%6lf\n", getpid(), pontos[j].x, pontos[j].y);
-                        // Escreve os resultados no pipe
-                        if (writen2(fd[i][1], output, strlen(output)) < 0) {
-                            perror("Erro ao escrever no pipe");
-                            close(fd[i][1]);
-                            free(pontos);
-                            free(polygon);
-                            return EXIT_FAILURE;
-                        }
+                        write(fd[i][1], output, strlen(output)); // Utiliza a função write para escrever no pipe
                     }
                 }
             }
@@ -258,47 +213,40 @@ int main(int argc, char* argv[]) {
             if (strcmp(modo, "normal") == 0) {
                 char output[128];
                 snprintf(output, sizeof(output), "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
-                // Escreve os resultados no pipe
-                if (writen2(fd[i][1], output, strlen(output)) < 0) {
-                    perror("Erro ao escrever no pipe");
-                    close(fd[i][1]);
-                    free(pontos);
-                    free(polygon);
-                    return EXIT_FAILURE;
-                }
+                write(fd[i][1], output, strlen(output)); // Utiliza a função write para escrever no pipe
             }
 
             close(fd[i][1]);
             free(pontos);
             free(polygon);
-            return EXIT_SUCCESS;
+            exit(EXIT_FAILURE);
         } else if (pid < 0) {
             perror("Erro ao fazer fork");
             free(pontos);
             free(polygon);
-            return EXIT_FAILURE;
+            exit(EXIT_FAILURE);
         } else {
-            pids[i] = pid; // Armazena o ID do processo filho
+            pids[i] = pid;
             close(fd[i][1]);
         }
     }
-//lida com a leitura dos dados dos pipes dos processos filhos
+
     int total_pontos_dentro = 0;
     int total_pontos_processados = 0;
 
     for (int i = 0; i < num_processos_filho; i++) {
         char buffer[1024];
         ssize_t bytesRead;
-        //Leitura dos Dados dos Pipes
-        while ((bytesRead = readn2(fd[i][0], buffer, sizeof(buffer) - 1)) > 0) {
+
+        while ((bytesRead = read(fd[i][0], buffer, sizeof(buffer) - 1)) > 0) {
             buffer[bytesRead] = '\0';
-            int pid, processed, inside;// Variáveis para armazenar os dados lidos
+            int pid, processed, inside;
             double x, y;
             if (strcmp(modo, "verboso") == 0) {
-                printf("%s", buffer);  // Imprime diretamente as linhas lidas no modo verboso
+                printf("%s", buffer);
             }
             if (sscanf(buffer, "%d;%d;%d", &pid, &processed, &inside) == 3) {
-                printf("%d;%d;%d\n", pid, processed, inside); // Imprime as linhas lidas no modo normal
+                printf("%d;%d;%d\n", pid, processed, inside);
                 total_pontos_dentro += inside;
                 total_pontos_processados += processed;
                 update_progress(total_pontos_processados, num_pontos_aleatorios);
@@ -319,5 +267,5 @@ int main(int argc, char* argv[]) {
 
     free(pontos);
     free(polygon);
-    return EXIT_SUCCESS;
+    exit(EXIT_FAILURE);
 }

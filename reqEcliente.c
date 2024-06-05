@@ -19,13 +19,6 @@ typedef struct {
     double y;
 } Point;
 
-/**
- * @brief Determines the orientation of an ordered triplet (p, q, r).
- * @param p First point of the triplet.
- * @param q Second point of the triplet.
- * @param r Third point of the triplet.
- * @return 0 if p, q, and r are colinear, 1 if clockwise, 2 if counterclockwise.
- */
 int orientation(Point p, Point q, Point r) {
     double val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
 
@@ -33,13 +26,6 @@ int orientation(Point p, Point q, Point r) {
     return (val > 0) ? 1 : 2;
 }
 
-/**
- * @brief Checks if point q lies on line segment pr.
- * @param p First point of the line segment.
- * @param q Point to check.
- * @param r Second point of the line segment.
- * @return true if point q lies on line segment pr, else false.
- */
 bool onSegment(Point p, Point q, Point r) {
     if (q.x <= fmax(p.x, r.x) && q.x >= fmin(p.x, r.x) &&
         q.y <= fmax(p.y, r.y) && q.y >= fmin(p.x, r.x))
@@ -48,14 +34,6 @@ bool onSegment(Point p, Point q, Point r) {
     return false;
 }
 
-/**
- * @brief Checks if line segments p1q1 and p2q2 intersect.
- * @param p1 First point of the first line segment.
- * @param q1 Second point of the first line segment.
- * @param p2 First point of the second line segment.
- * @param q2 Second point of the second line segment.
- * @return true if line segments p1q1 and p2q2 intersect, else false.
- */
 bool doIntersect(Point p1, Point q1, Point p2, Point q2) {
     int o1 = orientation(p1, q1, p2);
     int o2 = orientation(p1, q1, q2);
@@ -73,13 +51,6 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2) {
     return false;
 }
 
-/**
- * @brief Checks if a point p is inside a polygon of n points.
- * @param polygon[] Array of points forming the polygon.
- * @param n Number of points in the polygon.
- * @param p Point to check.
- * @return true if the point p is inside the polygon, else false.
- */
 bool isInsidePolygon(Point polygon[], int n, Point p) {
     if (n < 3) return false;
 
@@ -100,56 +71,36 @@ bool isInsidePolygon(Point polygon[], int n, Point p) {
     return count & 1;
 }
 
-// Função para escrever dados em um socket, garantindo a escrita completa
-ssize_t writen2(int fd, const void *buffer, size_t n) {
-    size_t left = n;
-    ssize_t written_bytes;
-    const char *ptr = (const char *) buffer;
-
-    while (left > 0) {
-        written_bytes = write(fd, ptr, left);
-        if (written_bytes <= 0) {
-            if (errno == EINTR) continue;
-            perror("Erro ao escrever no socket");
-            return -1;
-        }
-        left -= written_bytes;
-        ptr += written_bytes;
-    }
-    return (n - left);
-}
 
 int main(int argc, char *argv[]) {
     if (argc != 5) {
-        fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios> <modo>\n", argv[0]);
-        return EXIT_FAILURE;
+        char usage[] = "Uso: <arquivo_do_poligono> <num_processos_filho> <num_pontos_aleatorios> <modo>\n";
+        write(STDERR_FILENO, usage, strlen(usage));
+        exit(EXIT_FAILURE);
     }
 
-    // Extrai argumentos da linha de comando
     char *poligono = argv[1];
     int num_processos_filho = atoi(argv[2]);
     int num_pontos_aleatorios = atoi(argv[3]);
     char *modo = argv[4];
 
-    // Verifica se os argumentos são válidos
     if (num_processos_filho <= 0 || num_pontos_aleatorios <= 0) {
-        fprintf(stderr, "Erro: Números de processos e pontos devem ser maiores que 0.\n");
-        return EXIT_FAILURE;
+        char error[] = "Erro: Números de processos e pontos devem ser maiores que 0.\n";
+        write(STDERR_FILENO, error, strlen(error));
+        exit(EXIT_FAILURE);
     }
 
-    // Abre o arquivo do polígono para leitura
     int arquivo = open(poligono, O_RDONLY);
     if (arquivo < 0) {
         perror("Erro ao abrir o arquivo do polígono");
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    // Aloca memória para armazenar os pontos do polígono
     Point *polygon = malloc(100 * sizeof(Point));
     if (polygon == NULL) {
         perror("Erro ao alocar memória para o polígono");
         close(arquivo);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
     int capacity = 100;
     int n = 0;
@@ -157,7 +108,6 @@ int main(int argc, char *argv[]) {
     ssize_t bytesRead;
     char *line, *saveptr;
 
-    // Lê os pontos do polígono do arquivo
     while ((bytesRead = read(arquivo, buffer, sizeof(buffer) - 1)) > 0) {
         buffer[bytesRead] = '\0';
         line = strtok_r(buffer, "\n", &saveptr);
@@ -170,7 +120,7 @@ int main(int argc, char *argv[]) {
                     if (polygon == NULL) {
                         perror("Erro ao realocar memória para o polígono");
                         close(arquivo);
-                        return EXIT_FAILURE;
+                        exit(EXIT_FAILURE);
                     }
                 }
             }
@@ -180,65 +130,57 @@ int main(int argc, char *argv[]) {
 
     close(arquivo);
 
-    // Verifica se o polígono é válido
     if (n < 3) {
-        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
+        char error[] = "Polígono inválido ou dados insuficientes no arquivo.\n";
+        write(STDERR_FILENO, error, strlen(error));
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    // Aloca memória para armazenar pontos aleatórios
     Point *pontos = malloc(num_pontos_aleatorios * sizeof(Point));
     if (pontos == NULL) {
         perror("Erro ao alocar memória para pontos");
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    // Gera pontos aleatórios
     srand((unsigned int) time(NULL) + getpid());
     for (int i = 0; i < num_pontos_aleatorios; i++) {
-        pontos[i].x = (double) rand() / RAND_MAX * 3.0 - 1.5;
-        pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
+        pontos[i].x = (double) rand() / RAND_MAX * 2.0 - 1.0;
+        pontos[i].y = (double) rand() / RAND_MAX * 2.0 - 1.0;
     }
 
-    // Cria processos filhos para processar pontos e se comunicar com o servidor
     for (int i = 0; i < num_processos_filho; i++) {
         pid_t pid = fork();
-        if (pid == 0) {  // Processo filho
+        if (pid == 0) {
             int pontos_por_filho = num_pontos_aleatorios / num_processos_filho;
             int pontos_extra = num_pontos_aleatorios % num_processos_filho;
             int pontos_a_processar = pontos_por_filho + (i < pontos_extra ? 1 : 0);
             int pontos_dentro = 0;
 
-            // Processa pontos e verifica se estão dentro do polígono
             for (int j = i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra); j < i * pontos_por_filho + (i < pontos_extra ? i : pontos_extra) + pontos_a_processar; j++) {
                 if (isInsidePolygon(polygon, n, pontos[j])) {
                     pontos_dentro++;
-                    // Se o modo for 'verboso', imprime os pontos dentro do polígono
                     if (strcmp(modo, "verboso") == 0) {
                         char output[128];
                         snprintf(output, sizeof(output), "%d;%6lf;%6lf\n", getpid(), pontos[j].x, pontos[j].y);
-                        write(STDOUT_FILENO, output, strlen(output));  // Escreve diretamente no terminal
+                        write(STDOUT_FILENO, output, strlen(output));
                     }
                 }
             }
 
-            // Conecta-se ao servidor e envia dados
             int client_sock = socket(AF_UNIX, SOCK_STREAM, 0);
             if (client_sock < 0) {
                 perror("Erro ao criar socket do cliente");
                 exit(EXIT_FAILURE);
             }
 
-            // Cria uma estrutura sockaddr_un para representar o endereço do servidor
             struct sockaddr_un server_addr;
-            memset(&server_addr, 0, sizeof(struct sockaddr_un)); // Limpa a estrutura de endereço
-            server_addr.sun_family = AF_UNIX; // Define o tipo de endereço como AF_UNIX (Unix Domain)
-            strncpy(server_addr.sun_path, SOCKET_PATH, sizeof(server_addr.sun_path) - 1); // Copia o caminho do socket para a estrutura de endereço
+            memset(&server_addr, 0, sizeof(struct sockaddr_un));
+            server_addr.sun_family = AF_UNIX;
+            strncpy(server_addr.sun_path, SOCKET_PATH, sizeof(server_addr.sun_path) - 1);
             printf("Tentando conectar ao servidor...\n");
 
-            // Tenta estabelecer a conexão com o servidor
             if (connect(client_sock, (struct sockaddr *) &server_addr, sizeof(struct sockaddr_un)) < 0) {
                 perror("Erro ao conectar ao socket do servidor");
                 close(client_sock);
@@ -246,29 +188,14 @@ int main(int argc, char *argv[]) {
             }
             printf("Conectado ao servidor.\n");
             if (strcmp(modo, "normal") == 0) {
-                // Cria uma string formatada contendo os dados a serem enviados para o servidor
                 char output[128];
                 snprintf(output, sizeof(output), "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
-                // Envia os dados para o servidor através do socket do cliente
-                if (writen2(client_sock, output, strlen(output)) < 0) {
+                if (write(client_sock, output, strlen(output)) < 0) {
                     perror("Erro ao escrever no socket");
                     close(client_sock);
                     exit(EXIT_FAILURE);
                 }
             }
-            printf("Conectado ao servidor.\n");
-
-            // Envia dados para o servidor
-            if (strcmp(modo, "normal") == 0) {
-                char output[128];
-                snprintf(output, sizeof(output), "%d;%d;%d\n", getpid(), pontos_a_processar, pontos_dentro);
-                if (writen2(client_sock, output, strlen(output)) < 0) {
-                    perror("Erro ao escrever no socket");
-                    close(client_sock);
-                    exit(EXIT_FAILURE);
-                }
-            }
-
             close(client_sock);
             free(pontos);
             free(polygon);
@@ -277,16 +204,14 @@ int main(int argc, char *argv[]) {
             perror("Erro ao fazer fork");
             free(pontos);
             free(polygon);
-            return EXIT_FAILURE;
+            exit(EXIT_FAILURE);
         }
     }
 
-    // Libera a memória alocada
     free(pontos);
     free(polygon);
 
-    // Aguarda todos os processos filhos terminarem
     while (wait(NULL) > 0);
 
-    return EXIT_SUCCESS;
+    exit(EXIT_FAILURE);
 }

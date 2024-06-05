@@ -145,7 +145,9 @@ void *progress_thread(void *arg) {
         pthread_mutex_lock(progress_data->mutex);
         int progress = (*(progress_data->total_processed) * 100) / progress_data->num_random_points;
         pthread_mutex_unlock(progress_data->mutex);
-        printf("\rProgresso: %d%%", progress);
+        char progress_msg[128];
+        snprintf(progress_msg, sizeof(progress_msg), "\rProgresso: %d%%", progress);
+        write(STDOUT_FILENO, progress_msg, strlen(progress_msg));
         fflush(stdout);
         if (progress >= 100) break;
     }
@@ -154,8 +156,9 @@ void *progress_thread(void *arg) {
 }
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fprintf(stderr, "Uso: %s <arquivo_do_poligono> <num_threads> <num_pontos_aleatorios>\n", argv[0]);
-        return EXIT_FAILURE;
+        char usage[] = "Uso: <arquivo_do_poligono> <num_threads> <num_pontos_aleatorios>\n";
+        write(STDERR_FILENO, usage, strlen(usage));
+        exit(EXIT_FAILURE);
     }
 
     char *poligono = argv[1];
@@ -163,21 +166,22 @@ int main(int argc, char *argv[]) {
     int num_pontos_aleatorios = atoi(argv[3]);
 
     if (num_threads <= 0 || num_pontos_aleatorios <= 0) {
-        fprintf(stderr, "Erro: Número de threads e pontos deve ser maior que 0.\n");
-        return EXIT_FAILURE;
+        char error[] = "Erro: Número de threads e pontos deve ser maior que 0.\n";
+        write(STDERR_FILENO, error, strlen(error));
+        exit(EXIT_FAILURE);
     }
 
     int arquivo = open(poligono, O_RDONLY);
     if (arquivo < 0) {
         perror("Erro ao abrir o arquivo do polígono");
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
     Point *polygon = malloc(MAX_POINTS * sizeof(Point));
     if (polygon == NULL) {
         perror("Erro ao alocar memória para o polígono");
         close(arquivo);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
     int capacity = MAX_POINTS;
@@ -198,7 +202,7 @@ int main(int argc, char *argv[]) {
                     if (polygon == NULL) {
                         perror("Erro ao realocar memória para o polígono");
                         close(arquivo);
-                        return EXIT_FAILURE;
+                        exit(EXIT_FAILURE);
                     }
                 }
             }
@@ -209,22 +213,23 @@ int main(int argc, char *argv[]) {
     close(arquivo);
 
     if (n < 3) {
-        fprintf(stderr, "Polígono inválido ou dados insuficientes no arquivo.\n");
+        char error[] = "Polígono inválido ou dados insuficientes no arquivo.\n";
+        write(STDERR_FILENO, error, strlen(error));
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
     Point *pontos = malloc(num_pontos_aleatorios * sizeof(Point));
     if (pontos == NULL) {
         perror("Erro ao alocar memória para pontos");
         free(polygon);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
     srand((unsigned int)time(NULL));
     for (int i = 0; i < num_pontos_aleatorios; i++) {
-        pontos[i].x = (double) rand() / RAND_MAX * 3.0 - 1.5;
-        pontos[i].y = (double) rand() / RAND_MAX * 3.0 - 1.5;
+        pontos[i].x = (double) rand() / RAND_MAX * 2.0 - 1.0;
+        pontos[i].y = (double) rand() / RAND_MAX * 2.0 - 1.0;
     }
 
     // Aloca memória para as threads e os dados das threads
@@ -275,11 +280,13 @@ int main(int argc, char *argv[]) {
 
     double area_of_reference = 4.0;
     double estimated_area = ((double)total_inside / num_pontos_aleatorios) * area_of_reference;
-    printf("\nÁrea estimada do polígono: %.6f unidades quadradas\n", estimated_area);
+    char area_msg[128];
+    snprintf(area_msg, sizeof(area_msg), "\nÁrea estimada do polígono: %.6f unidades quadradas\n", estimated_area);
+    write(STDOUT_FILENO, area_msg, strlen(area_msg));
 
     free(pontos);
     free(polygon);
     free(threads);
     free(thread_data);
-    return EXIT_SUCCESS;
+    exit(EXIT_FAILURE);
 }
